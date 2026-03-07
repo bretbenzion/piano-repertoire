@@ -1,7 +1,7 @@
 {
-  "name": "Piano Repertoire",
+  "name": "Repertoire",
   "short_name": "Repertoire",
-  "description": "Track progress on piano pieces",
+  "description": "Track progress on musical repertoire",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#F5F4F0",

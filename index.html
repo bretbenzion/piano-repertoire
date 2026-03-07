@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#7B9E87"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-title" content="Repertoire"/>
-<title>Piano Repertoire</title>
+<title>Repertoire</title>
 <link rel="manifest" href="manifest.json"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -15,21 +15,15 @@ input,button,textarea{font-family:inherit}
 button{cursor:pointer}
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px}
-
-/* Layout */
 .screen{display:flex;flex-direction:column;height:100dvh;background:#F5F4F0;position:fixed;inset:0;overflow:hidden}
 .topbar{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;border-bottom:1px solid #E4E3DE;flex-shrink:0;background:#F5F4F0}
 .scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .row{padding:14px 16px;border-bottom:1px solid #E4E3DE;cursor:pointer;display:flex;justify-content:space-between;align-items:flex-start}
 .row:active{background:#EFEEE9}
-
-/* Typography */
 .title{font-size:18px;color:#2E2E2E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sub{font-size:13px;color:#6B6B6B}
 .label{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#6B6B6B;text-transform:uppercase}
 .small{font-size:12px;color:#9E9E9E}
-
-/* Buttons */
 .btn{background:none;border:none;color:#7B9E87;font-size:14px;padding:8px 16px;border-radius:7px;font-family:inherit}
 .btn-primary{background:#7B9E87;color:#fff;border:none;font-size:14px;padding:9px 20px;border-radius:7px;font-family:inherit}
 .btn-back{background:none;border:none;font-size:26px;color:#7B9E87;padding:0 6px 0 0;line-height:1;flex-shrink:0}
@@ -38,78 +32,48 @@ button{cursor:pointer}
 .fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:28px;background:#7B9E87;color:#fff;border:none;font-size:30px;box-shadow:0 4px 16px rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center}
 .pill{font-size:12px;padding:5px 12px;border:1px solid #E4E3DE;border-radius:20px;background:transparent;color:#6B6B6B;white-space:nowrap;flex-shrink:0}
 .pill.active{background:#7B9E87;color:#fff;border-color:#7B9E87}
-
-/* Tag chip */
 .chip{font-size:11px;border-radius:4px;padding:2px 7px;display:inline-block}
-
-/* Cards */
 .card{background:#EFEEE9;border-radius:10px;padding:14px;margin-bottom:10px}
-
-/* Progress bar */
 .pbar{display:flex;height:14px;border-radius:6px;overflow:hidden;width:100%}
-
-/* Grade badge */
 .grade-badge{color:#fff;border-radius:6px;padding:5px 10px;font-weight:bold;font-size:14px;min-width:42px;text-align:center;flex-shrink:0}
-
-/* Tabs */
 .tabs{display:flex;border-bottom:1px solid #E4E3DE;overflow-x:auto;flex-shrink:0;background:#F5F4F0}
 .tab{font-size:13px;padding:10px 16px;white-space:nowrap;background:none;border:none;color:#6B6B6B;border-bottom:2.5px solid transparent;font-family:inherit}
 .tab.active{color:#7B9E87;border-bottom-color:#7B9E87}
-
-/* Filter chips row */
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
-
-/* Modal */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.38);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
 .modal{background:#F5F4F0;border-radius:14px;width:100%;max-width:440px;max-height:90dvh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)}
 .modal-head{padding:20px 20px 0;display:flex;justify-content:space-between;align-items:center}
 .modal-body{padding:16px 20px 0}
 .modal-foot{padding:16px 20px 20px;display:flex;justify-content:flex-end;gap:8px}
 .modal-close{background:none;border:none;font-size:24px;color:#9E9E9E;line-height:1;padding:0 0 0 8px}
-
-/* Action sheet */
 .sheet-overlay{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.28)}
 .sheet{position:absolute;bottom:0;left:0;right:0;background:#F5F4F0;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,16px)}
 .sheet-handle{width:40px;height:4px;background:#E4E3DE;border-radius:2px;margin:12px auto 4px}
 .sheet-btn{display:block;width:100%;text-align:left;padding:15px 24px;background:none;border:none;font-size:16px;color:#2E2E2E;font-family:inherit;border-top:1px solid #E4E3DE}
 .sheet-btn:first-of-type{border-top:none}
 .sheet-btn.danger{color:#BB5050}
-
-/* Form fields */
 .field{display:flex;flex-direction:column;gap:4px}
 .field label{font-size:12px;color:#6B6B6B}
 .field input{font-size:15px;padding:9px 12px;border:1.5px solid #E4E3DE;border-radius:7px;background:#fff;color:#2E2E2E;outline:none;width:100%}
 .field input:focus{border-color:#7B9E87}
 .field .err{font-size:12px;color:#BB5050}
 .row-fields{display:flex;gap:10px}
-
-/* Grade grid */
 .grade-grid{display:flex;flex-direction:column;gap:5px}
 .grade-row{display:flex;gap:5px}
 .grade-btn{flex:1;padding:10px 0;border:none;border-radius:7px;font-size:14px;font-family:inherit}
-
-/* Warn box */
 .warn{background:#FFF3CD;border:1px solid #F0CC60;border-radius:9px;padding:14px}
 .warn-title{font-size:14px;font-weight:bold;color:#7A5C00;margin-bottom:6px}
 .warn-body{font-size:13px;color:#7A5C00;margin-bottom:12px;line-height:1.5}
 .warn-btns{display:flex;gap:8px}
 .warn-cancel{flex:1;padding:9px 0;background:none;border:1px solid #ccc;border-radius:7px;font-size:14px;font-family:inherit}
 .warn-ok{flex:1;padding:9px 0;background:#BB5050;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:bold;font-family:inherit}
-
-/* Info box */
 .infobox{margin-top:20px;padding:12px 14px;background:#EFEEE9;border-radius:9px;border:1px solid #E4E3DE}
 .infobox-title{font-size:12px;font-weight:bold;color:#6B6B6B;margin-bottom:4px}
 .infobox-body{font-size:12px;color:#6B6B6B;line-height:1.6}
-
-/* Status */
 .status-ok{font-size:13px;margin-top:14px;padding:10px 14px;border-radius:8px;background:#E8F5E9;color:#2E7D32}
 .status-err{font-size:13px;margin-top:14px;padding:10px 14px;border-radius:8px;background:#FDECEA;color:#BB5050}
-
-/* Empty state */
 .empty{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px}
 .empty p{color:#9E9E9E;text-align:center;line-height:1.8}
-
-/* Section content area */
 .section-content{padding:16px 16px 100px;overflow-y:auto;flex:1}
 </style>
 </head>
@@ -168,6 +132,8 @@ async function loadAll() {
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+const pct = v => (v*100).toFixed(1)+'%';
+
 function movMastery(mov, sections) {
   const total = mov.totalMeasures||0; if (!total) return 0;
   const mine = sections.filter(s=>s.movementId===mov.id);
@@ -176,12 +142,14 @@ function movMastery(mov, sections) {
     return sum + n*(GRADE_MASTERY[s.grade]||0);
   },0) / total;
 }
+
+// Equal weighting per movement (not by measures)
 function workMastery(workId,movements,sections) {
   const mine = movements.filter(m=>m.workId===workId);
-  const total = mine.reduce((s,m)=>s+(m.totalMeasures||0),0);
-  if (!total) return 0;
-  return mine.reduce((s,m)=>s+movMastery(m,sections)*(m.totalMeasures||0),0)/total;
+  if (!mine.length) return 0;
+  return mine.reduce((s,m)=>s+movMastery(m,sections),0) / mine.length;
 }
+
 async function touchWork(workId) {
   const ws = await dbAll('works'), w = ws.find(x=>x.id===workId);
   if (w) await dbPut('works',{...w,lastWorked:Date.now()});
@@ -199,25 +167,25 @@ async function getOrCreateComposer(name) {
 async function exportJSON() {
   const data = await loadAll();
   const blob = new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),...data},null,2)],{type:'application/json'});
-  dl(blob,'piano-repertoire-'+today()+'.json');
+  dl(blob,'repertoire-'+today()+'.json');
 }
 async function exportCSV() {
   const {composers,works,movements,sections} = await loadAll();
-  const rows=[['Composer','Work','Tag','Movement','Total Measures','Target BPM','Start','End','Grade','Mastery%']];
+  const rows=[['Composer','Work','Tag','Movement','Total Measures','Target BPM','Section','Start','End','Grade','Mastery%']];
   for (const comp of composers) {
     for (const w of works.filter(x=>x.composerId===comp.id)) {
       const wm = movements.filter(m=>m.workId===w.id);
-      if (!wm.length){rows.push([comp.name,w.title,w.tag,'','','','','','','']);continue;}
+      if (!wm.length){rows.push([comp.name,w.title,w.tag,'','','','','','','','']);continue;}
       for (const m of wm){
-        const ms=sections.filter(s=>s.movementId===m.id);
-        const pct=Math.round(movMastery(m,sections)*100)+'%';
-        if (!ms.length){rows.push([comp.name,w.title,w.tag,m.name,m.totalMeasures,m.targetBpm,'','','',pct]);continue;}
-        for(const s of ms) rows.push([comp.name,w.title,w.tag,m.name,m.totalMeasures,m.targetBpm,s.startMeasure,s.endMeasure,s.grade,pct]);
+        const ms=sections.filter(s=>s.movementId===m.id).sort((a,b)=>a.startMeasure-b.startMeasure);
+        const mastPct=pct(movMastery(m,sections));
+        if (!ms.length){rows.push([comp.name,w.title,w.tag,m.name,m.totalMeasures,m.targetBpm,'','','','',mastPct]);continue;}
+        ms.forEach((s,i)=>rows.push([comp.name,w.title,w.tag,m.name,m.totalMeasures,m.targetBpm,s.name||'Section '+(i+1),s.startMeasure,s.endMeasure,s.grade,mastPct]));
       }
     }
   }
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  dl(new Blob([csv],{type:'text/csv'}),'piano-repertoire-'+today()+'.csv');
+  dl(new Blob([csv],{type:'text/csv'}),'repertoire-'+today()+'.csv');
 }
 async function importJSON(text) {
   let p; try{p=JSON.parse(text);}catch{throw new Error('Invalid JSON');}
@@ -264,7 +232,7 @@ function tagChip(tag) {
 function gradeBadge(grade) {
   return div({className:'grade-badge',style:{background:GRADE_COLOR[grade]}}, grade);
 }
-function progressBar(totalMeasures, sections, height=14) {
+function progressBar(totalMeasures, sections) {
   const bar = div({className:'pbar'});
   if (!totalMeasures) { bar.style.background='#CCCCC8'; return bar; }
   const sorted = [...sections].sort((a,b)=>a.startMeasure-b.startMeasure);
@@ -275,10 +243,7 @@ function progressBar(totalMeasures, sections, height=14) {
     cur=s.endMeasure+1;
   }
   if (cur<=totalMeasures) segs.push({n:totalMeasures-cur+1,color:'#CCCCC8'});
-  for (const s of segs) {
-    const seg=div({style:{flex:s.n,background:s.color,height:'100%'}});
-    bar.appendChild(seg);
-  }
+  for (const s of segs) bar.appendChild(div({style:{flex:s.n,background:s.color,height:'100%'}}));
   return bar;
 }
 function combinedProgressBar(movements, sections) {
@@ -299,13 +264,13 @@ function combinedProgressBar(movements, sections) {
   return bar;
 }
 
-// ─── MODAL ───────────────────────────────────────────────────────────────────
+// ─── MODAL / SHEET ───────────────────────────────────────────────────────────
 function modal(title, bodyEl, footerEl, onClose) {
   const overlay = div({className:'overlay'});
   const m = div({className:'modal'},
     div({className:'modal-head'},
       span({style:{fontSize:'18px'}}, title),
-      btn({className:'modal-close', onClick:onClose}, '×')
+      btn({className:'modal-close', onClick:onClose}, '\xd7')
     ),
     div({className:'modal-body'}, bodyEl),
     footerEl && div({className:'modal-foot'}, footerEl)
@@ -315,15 +280,12 @@ function modal(title, bodyEl, footerEl, onClose) {
   document.body.appendChild(overlay);
   return { remove: () => overlay.remove() };
 }
-
-// ─── ACTION SHEET ────────────────────────────────────────────────────────────
 function actionSheet(items) {
   const overlay = div({className:'sheet-overlay'});
   const sheet   = div({className:'sheet'}, div({className:'sheet-handle'}));
   const close   = () => overlay.remove();
   for (const item of items) {
-    const b = btn({className:'sheet-btn'+(item.danger?' danger':''), onClick:()=>{close();item.onClick();}}, item.label);
-    sheet.appendChild(b);
+    sheet.appendChild(btn({className:'sheet-btn'+(item.danger?' danger':''), onClick:()=>{close();item.onClick();}}, item.label));
   }
   overlay.appendChild(sheet);
   overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
@@ -332,21 +294,15 @@ function actionSheet(items) {
 
 // ─── FIELD HELPER ────────────────────────────────────────────────────────────
 function fieldEl(labelText, value, onChange, opts={}) {
-  const wrap = div({className:'field'+(opts.style?' ':''), style:opts.flex?{flex:1}:{}});
+  const wrap = div({className:'field', style:opts.flex?{flex:1}:{}});
   if (labelText) wrap.appendChild(el('label',{}, labelText));
-  const input = inp({
-    type: opts.type||'text',
-    inputmode: opts.type==='number'?'numeric':'text',
-    value: value||'',
-    placeholder: opts.placeholder||''
-  });
+  const input = inp({type:opts.type||'text', inputmode:opts.type==='number'?'numeric':'text', value:value||'', placeholder:opts.placeholder||''});
   if (opts.autoFocus) setTimeout(()=>input.focus(),50);
   input.addEventListener('input', ()=>onChange(input.value));
   wrap.appendChild(input);
   const errSpan = span({className:'err',style:{display:'none'}});
   wrap.appendChild(errSpan);
   wrap._input = input;
-  wrap._err   = errSpan;
   wrap.setError = msg => { errSpan.textContent=msg; errSpan.style.display=msg?'':'none'; input.style.borderColor=msg?'#BB5050':'#E4E3DE'; };
   return wrap;
 }
@@ -379,7 +335,6 @@ function gradeSelector(current, onChange) {
 // ─── DIALOGS ─────────────────────────────────────────────────────────────────
 function workDialog(initial, onSave) {
   let composer=initial?.composer||'', title=initial?.title||'';
-  let grade;
   const fComp  = fieldEl('Composer', composer, v=>composer=v, {autoFocus:true, placeholder:'e.g. Chopin'});
   const fTitle = fieldEl('Title',    title,    v=>title=v,    {placeholder:'e.g. Ballade No. 1 in G minor'});
   const body   = div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fComp, fTitle);
@@ -399,12 +354,10 @@ function movementDialog(initial, onSave, onDelete) {
   const fMeas = fieldEl('Total measures',measures, v=>measures=v,{type:'number',flex:true});
   const fBpm  = fieldEl('Target BPM',   bpm,      v=>bpm=v,    {type:'number',flex:true});
   const err   = span({className:'err',style:{display:'none'}});
-  const rowF  = div({className:'row-fields'}, fMeas, fBpm);
-  const bodyParts = [div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fName, rowF, err)];
+  const body  = div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fName, div({className:'row-fields'}, fMeas, fBpm), err);
   if (initial && onDelete) {
-    const delBtn = btn({className:'btn', style:{color:'#BB5050',borderTop:'1px solid #E4E3DE',paddingTop:'12px',marginTop:'4px'},
-      onClick:()=>{ m.remove(); onDelete(); }}, 'Delete this movement');
-    bodyParts[0].appendChild(delBtn);
+    body.appendChild(btn({className:'btn', style:{color:'#BB5050',borderTop:'1px solid #E4E3DE',paddingTop:'12px',marginTop:'4px'},
+      onClick:()=>{ m.remove(); onDelete(); }}, 'Delete this movement'));
   }
   const foot = div({style:{display:'flex',gap:'8px'}},
     btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
@@ -415,19 +368,25 @@ function movementDialog(initial, onSave, onDelete) {
       m.remove(); onSave(name.trim(),mv,bv);
     }}, initial?'Save':'Add')
   );
-  const m = modal(initial?'Edit Movement':'Add Movement', bodyParts[0], foot, ()=>m.remove());
+  const m = modal(initial?'Edit Movement':'Add Movement', body, foot, ()=>m.remove());
 }
 
 function sectionDialog(movement, allSections, editSection, onSave) {
-  let start=editSection?.startMeasure?.toString()||'', end=editSection?.endMeasure?.toString()||'', grade=editSection?.grade||'B';
-  const fStart = fieldEl('Start measure', start, v=>start=v, {type:'number',autoFocus:true,flex:true});
+  let start=editSection?.startMeasure?.toString()||'';
+  let end=editSection?.endMeasure?.toString()||'';
+  let grade=editSection?.grade||'B';
+  let name=editSection?.name||'';
+  const fName  = fieldEl('Section name (optional)', name, v=>name=v, {autoFocus:true, placeholder:'e.g. Exposition'});
+  const fStart = fieldEl('Start measure', start, v=>start=v, {type:'number',flex:true});
   const fEnd   = fieldEl('End measure',   end,   v=>end=v,   {type:'number',flex:true});
   const err    = span({className:'err',style:{display:'none'}});
   const gs     = gradeSelector(grade, g=>grade=g);
   const body   = div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
+    fName,
     div({className:'row-fields'}, fStart, fEnd), err,
     div({},el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Grade'), gs)
   );
+  const setErr=msg=>{err.textContent=msg;err.style.display=msg?'':'none';};
   const foot = div({style:{display:'flex',gap:'8px'}},
     btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
     btn({className:'btn-primary', onClick:()=>{
@@ -436,10 +395,9 @@ function sectionDialog(movement, allSections, editSection, onSave) {
       if(s<1||e>movement.totalMeasures){setErr('Must be within 1\u2013'+movement.totalMeasures);return;}
       if(s>e){setErr('Start must be \u2264 end');return;}
       if(allSections.some(sec=>sec.id!==(editSection?.id??-1)&&e>=sec.startMeasure&&s<=sec.endMeasure)){setErr('Overlaps an existing section');return;}
-      m.remove(); onSave(s,e,grade);
+      m.remove(); onSave(s,e,grade,name.trim());
     }}, 'Save')
   );
-  const setErr=msg=>{err.textContent=msg;err.style.display=msg?'':'none';};
   const m = modal(editSection?'Edit Section':'Add Section', body, foot, ()=>m.remove());
 }
 
@@ -448,7 +406,7 @@ function splitDialog(section, onSplit) {
   const f   = fieldEl('Split after measure', '', v=>at=v, {type:'number',autoFocus:true});
   const err = span({className:'err',style:{display:'none'}});
   const body= div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
-   para({style:{fontSize:'14px',color:'#6B6B6B',lineHeight:'1.5'}},
+    para({style:{fontSize:'14px',color:'#6B6B6B',lineHeight:'1.5'}},
       'Section spans mm. '+section.startMeasure+'\u2013'+section.endMeasure+'. Enter the last measure of the first half:'),
     f, err
   );
@@ -471,8 +429,7 @@ function mergeDialog(section, prev, next, onMerge) {
   const both=prev&&next;
   const bodyParts=[];
   if (both) {
-    const lbl=el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Merge with:');
-    bodyParts.push(lbl);
+    bodyParts.push(el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Merge with:'));
     for (const other of [prev,next]) {
       const rb=el('input',{type:'radio'}); rb.checked=(mergeWith.id===other.id);
       const lbEl=el('label',{style:{display:'flex',alignItems:'center',gap:'10px',fontSize:'14px',padding:'6px 0',cursor:'pointer'}},
@@ -498,29 +455,124 @@ function tagDialog(current, onSelect) {
   const body=div({style:{display:'flex',flexDirection:'column',marginBottom:'4px'}});
   for (const [i,tag] of TAGS.entries()) {
     const color=TAG_COLOR[tag];
-    const chip=span({className:'chip',style:{color,background:color+'22'}},tag);
     const rb=el('input',{type:'radio'}); rb.checked=(tag===current);
     const row=el('label',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 4px',
-      cursor:'pointer',borderTop:i>0?'1px solid #E4E3DE':'none'}},rb,chip,span({style:{fontSize:'15px',color:'#2E2E2E'}},tag));
+      cursor:'pointer',borderTop:i>0?'1px solid #E4E3DE':'none'}},
+      rb,span({className:'chip',style:{color,background:color+'22'}},tag),span({style:{fontSize:'15px',color:'#2E2E2E'}},tag));
     row.addEventListener('click',()=>{m.remove();onSelect(tag);});
     body.appendChild(row);
   }
-  const foot=btn({className:'btn',onClick:()=>m.remove()},'Cancel');
-  const m=modal('Set tag',body,div({},foot),()=>m.remove());
+  const m=modal('Set tag',body,div({},btn({className:'btn',onClick:()=>m.remove()},'Cancel')),()=>m.remove());
 }
 
+// ─── CONVERT TO MOVEMENT DIALOG ───────────────────────────────────────────────
+function convertToMovementDialog(sourceWork, sourceComposerName) {
+  // Pick a target work (excluding source)
+  const candidates = STATE.works.filter(w=>w.id!==sourceWork.id);
+  if (!candidates.length) {
+    alert('No other works to convert into. Create a target work first.');
+    return;
+  }
+  let targetWorkId = candidates[0].id;
+  let movName = sourceWork.title;
+
+  const fName = fieldEl('Movement name', movName, v=>movName=v, {autoFocus:true});
+
+  const selectEl = el('select',{style:{fontSize:'15px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',background:'#fff',color:'#2E2E2E',width:'100%',outline:'none',fontFamily:'inherit'}});
+  for (const w of candidates) {
+    const comp = STATE.composers.find(c=>c.id===w.composerId);
+    const opt = el('option',{value:String(w.id)}, (comp?comp.name+' \u2013 ':'')+w.title);
+    if (w.id===targetWorkId) opt.selected=true;
+    selectEl.appendChild(opt);
+  }
+  selectEl.addEventListener('change',()=>targetWorkId=parseInt(selectEl.value));
+
+  const body = div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
+    fName,
+    div({className:'field'},
+      el('label',{},'Add as movement of'),
+      selectEl
+    ),
+    para({style:{fontSize:'12px',color:'#9E9E9E',lineHeight:'1.5'}},
+      'All sections will be moved. The original work will be deleted.')
+  );
+  const foot = div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:async()=>{
+      if(!movName.trim()) return;
+      const targetWork = STATE.works.find(w=>w.id===targetWorkId);
+      if(!targetWork) return;
+      // Get existing movements of target to set orderIndex
+      const targetMovs = STATE.movements.filter(mv=>mv.workId===targetWorkId);
+      const orderIndex = targetMovs.length;
+      // Get source movements and sections
+      const sourceMov = STATE.movements.filter(mv=>mv.workId===sourceWork.id);
+      // If source has exactly one movement, absorb it; else use totalMeasures=0 as container
+      if (sourceMov.length===1) {
+        const sm = sourceMov[0];
+        const newMovId = await dbPut('movements',{workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,orderIndex});
+        // Move sections
+        const secs = STATE.sections.filter(s=>s.movementId===sm.id);
+        for (const s of secs) await dbPut('sections',{...s,movementId:newMovId});
+        await dbDel('movements',sm.id);
+      } else {
+        // Multi-movement source: create a container movement, sections stay per-movement so just re-parent movements
+        for (const sm of sourceMov) {
+          await dbPut('movements',{...sm,workId:targetWorkId,orderIndex:targetMovs.length+sourceMov.indexOf(sm)});
+        }
+      }
+      // Delete source work (and composer if orphaned)
+      const cId = sourceWork.composerId;
+      await dbDel('works',sourceWork.id);
+      await pruneComposer(cId);
+      m.remove();
+      navigate({screen:'work',workId:targetWorkId,composerName:STATE.composers.find(c=>c.id===targetWork.composerId)?.name||''});
+      reload();
+    }},'Convert')
+  );
+  const m = modal('Convert to Movement', body, foot, ()=>m.remove());
+}
+
+// ─── EXTRACT TO WORK DIALOG ──────────────────────────────────────────────────
+function extractToWorkDialog(movement, currentWorkId) {
+  let newTitle = movement.name;
+  let newComposer = '';
+  const currentWork = STATE.works.find(w=>w.id===currentWorkId);
+  const currentComp = STATE.composers.find(c=>c.id===currentWork?.composerId);
+  if (currentComp) newComposer = currentComp.name;
+
+  const fTitle = fieldEl('New work title', newTitle, v=>newTitle=v, {autoFocus:true});
+  const fComp  = fieldEl('Composer', newComposer, v=>newComposer=v);
+  const body = div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
+    fTitle, fComp,
+    para({style:{fontSize:'12px',color:'#9E9E9E',lineHeight:'1.5'}},
+      'This movement and all its sections will become a standalone work.')
+  );
+  const foot = div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:async()=>{
+      if(!newTitle.trim()||!newComposer.trim()) return;
+      const composerId = await getOrCreateComposer(newComposer.trim());
+      const newWorkId  = await dbPut('works',{composerId,title:newTitle.trim(),tag:currentWork?.tag||'Current',lastWorked:Date.now()});
+      // Re-parent movement
+      await dbPut('movements',{...movement,workId:newWorkId,orderIndex:0});
+      // Sections stay — they reference movementId which hasn't changed
+      await touchWork(currentWorkId);
+      m.remove();
+      navigate({screen:'work',workId:newWorkId,composerName:newComposer.trim()});
+      reload();
+    }},'Extract')
+  );
+  const m = modal('Extract to Work', body, foot, ()=>m.remove());
+}
+
+// ─── DATA MODAL ──────────────────────────────────────────────────────────────
 function dataModal(onReload) {
   let confirmFile=null;
   const statusEl=div({style:{display:'none'}});
-  function setStatus(msg,ok) {
-    statusEl.textContent=msg; statusEl.className=ok?'status-ok':'status-err';
-    statusEl.style.display=msg?'':'none';
-  }
+  function setStatus(msg,ok) { statusEl.textContent=msg; statusEl.className=ok?'status-ok':'status-err'; statusEl.style.display=msg?'':'none'; }
   const fileInput=el('input',{type:'file',accept:'.json',style:{display:'none'}});
-  fileInput.addEventListener('change',()=>{
-    const f=fileInput.files[0]; if(!f) return;
-    confirmFile=f; renderConfirm();
-  });
+  fileInput.addEventListener('change',()=>{ const f=fileInput.files[0]; if(f){confirmFile=f;renderConfirm();} });
   const confirmArea=div();
   function renderConfirm() {
     confirmArea.innerHTML='';
@@ -547,8 +599,7 @@ function dataModal(onReload) {
   }
   renderConfirm();
   const body=div({style:{display:'flex',flexDirection:'column',gap:'0',paddingBottom:'24px'}},
-   para({style:{fontSize:'13px',color:'#6B6B6B',lineHeight:'1.6',marginBottom:'18px'}},
-      'Export a backup to save your repertoire. Import replaces all current data.'),
+    para({style:{fontSize:'13px',color:'#6B6B6B',lineHeight:'1.6',marginBottom:'18px'}},'Export a backup to save your repertoire. Import replaces all current data.'),
     div({className:'label',style:{marginBottom:'10px'}},'Export'),
     btn({className:'btn',style:{textAlign:'left',background:'#EFEEE9',border:'1px solid #E4E3DE',borderRadius:'9px',padding:'13px 16px',marginBottom:'8px',width:'100%'},
       onClick:async()=>{await exportJSON();setStatus('JSON exported.',true);}},
@@ -563,8 +614,8 @@ function dataModal(onReload) {
     div({className:'label',style:{marginBottom:'10px'}},'Import'),
     confirmArea, fileInput, statusEl,
     div({className:'infobox'},
-      div({className:'infobox-title'},'Brave tip'),
-      div({className:'infobox-body'},'Install via Brave menu \u2192 Add to Home Screen. Then go to Brave Settings \u2192 Site & Shields Settings \u2192 [this site] \u2192 Storage \u2192 Allow data storage.')
+      div({className:'infobox-title'},'Tip'),
+      div({className:'infobox-body'},'Install via browser menu \u2192 Add to Home Screen to protect data from cache clearing.')
     )
   );
   const m=modal('Backup & Restore',body,null,()=>m.remove());
@@ -573,16 +624,11 @@ function dataModal(onReload) {
 // ─── APP STATE ────────────────────────────────────────────────────────────────
 let STATE = {composers:[],works:[],movements:[],sections:[]};
 let NAV   = {screen:'home'};
-
-async function reload() {
-  STATE = await loadAll();
-  render();
-}
-
+async function reload() { STATE = await loadAll(); render(); }
 function navigate(nav) { NAV=nav; render(); }
 function goBack() {
-  if (NAV.screen==='work')     navigate({screen:'composer',composerName:NAV.composerName});
-  else                         navigate({screen:'home'});
+  if (NAV.screen==='work') navigate({screen:'composer',composerName:NAV.composerName});
+  else navigate({screen:'home'});
 }
 
 // ─── SECTION ROW ──────────────────────────────────────────────────────────────
@@ -594,22 +640,23 @@ function sectionRow(section, idx, allSections, movement, workId) {
   const canSplit=section.endMeasure>section.startMeasure;
   const canMergePrev=prev&&prev.endMeasure===section.startMeasure-1;
   const canMergeNext=next&&next.startMeasure===section.endMeasure+1;
+  const sectionLabel = section.name || ('Section '+(idx+1));
 
   const menuItems=[
-    {label:'Edit',onClick:()=>sectionDialog(movement,allSections,section,async(s,e,g)=>{
-      await dbPut('sections',{...section,startMeasure:s,endMeasure:e,grade:g});
+    {label:'Edit',onClick:()=>sectionDialog(movement,allSections,section,async(s,e,g,n)=>{
+      await dbPut('sections',{...section,startMeasure:s,endMeasure:e,grade:g,name:n||''});
       await touchWork(workId); reload();
     })},
     ...(canSplit?[{label:'Split',onClick:()=>splitDialog(section,async at=>{
       await dbDel('sections',section.id);
-      await dbPut('sections',{movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade});
-      await dbPut('sections',{movementId:section.movementId,startMeasure:at+1,endMeasure:section.endMeasure,grade:section.grade});
+      await dbPut('sections',{movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade,name:''});
+      await dbPut('sections',{movementId:section.movementId,startMeasure:at+1,endMeasure:section.endMeasure,grade:section.grade,name:''});
       await touchWork(workId); reload();
     })}]:[]),
     ...((canMergePrev||canMergeNext)?[{label:'Merge with adjacent',onClick:()=>mergeDialog(section,canMergePrev?prev:null,canMergeNext?next:null,async(other,grade)=>{
       const s=Math.min(section.startMeasure,other.startMeasure),e=Math.max(section.endMeasure,other.endMeasure);
       await dbDel('sections',section.id); await dbDel('sections',other.id);
-      await dbPut('sections',{movementId:section.movementId,startMeasure:s,endMeasure:e,grade});
+      await dbPut('sections',{movementId:section.movementId,startMeasure:s,endMeasure:e,grade,name:''});
       await touchWork(workId); reload();
     })}]:[]),
     {label:'Delete section',danger:true,onClick:async()=>{await dbDel('sections',section.id);await touchWork(workId);reload();}}
@@ -618,7 +665,7 @@ function sectionRow(section, idx, allSections, movement, workId) {
   return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'#EFEEE9',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px'}},
     gradeBadge(section.grade),
     div({style:{flex:'1'}},
-      div({style:{fontSize:'14px',fontWeight:'bold',color:'#2E2E2E'}},'Section '+(idx+1)),
+      div({style:{fontSize:'14px',fontWeight:'bold',color:'#2E2E2E'}},sectionLabel),
       div({style:{fontSize:'13px',color:'#6B6B6B'}},'mm. '+section.startMeasure+'\u2013'+section.endMeasure)
     ),
     btn({className:'btn-icon',onClick:()=>actionSheet(menuItems)},'\u22ef')
@@ -629,37 +676,44 @@ function sectionRow(section, idx, allSections, movement, workId) {
 function movementTab(movement, workId) {
   const mySections=STATE.sections.filter(s=>s.movementId===movement.id).sort((a,b)=>a.startMeasure-b.startMeasure);
   const mastery=movMastery(movement,STATE.sections);
+  const siblingsCount=STATE.movements.filter(m=>m.workId===workId).length;
 
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'22px'}});
   pbarRow.appendChild(div({style:{flex:'1'}},progressBar(movement.totalMeasures,mySections)));
-  pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'46px',textAlign:'right'}},Math.round(mastery*100)+'%'));
+  pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'52px',textAlign:'right'}},pct(mastery)));
 
-  const content=div({className:'section-content'},
+  const editBtn=btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
+    onClick:()=>movementDialog(movement,async(name,totalMeasures,targetBpm)=>{
+      await dbPut('movements',{...movement,name,totalMeasures,targetBpm});await touchWork(workId);reload();
+    },async()=>{
+      const secs=await dbAll('sections');
+      for(const s of secs.filter(s=>s.movementId===movement.id)) await dbDel('sections',s.id);
+      await dbDel('movements',movement.id);await touchWork(workId);reload();
+    })},'Edit');
+  const extractBtn=siblingsCount>1?btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
+    onClick:()=>extractToWorkDialog(movement,workId)},'\u2197 Extract'):null;
+  const headerBtns=div({style:{display:'flex',gap:'6px',flexShrink:'0',marginTop:'2px'}},editBtn,extractBtn);
+
+  return div({className:'section-content'},
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'14px'}},
       div({},
         div({style:{fontSize:'19px',fontWeight:'bold',color:'#2E2E2E'}},movement.name),
         div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},movement.totalMeasures+' measures \u00b7 \u2669= '+movement.targetBpm)
       ),
-      btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px',marginTop:'2px'},onClick:()=>movementDialog(movement,async(name,totalMeasures,targetBpm)=>{
-        await dbPut('movements',{...movement,name,totalMeasures,targetBpm});await touchWork(workId);reload();
-      },async()=>{
-        const secs=await dbAll('sections');
-        for(const s of secs.filter(s=>s.movementId===movement.id)) await dbDel('sections',s.id);
-        await dbDel('movements',movement.id);await touchWork(workId);reload();
-      })},'Edit')
+      headerBtns
     ),
     pbarRow,
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
       span({className:'label'},'Sections'),
-      btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px'},onClick:()=>sectionDialog(movement,mySections,null,async(s,e,grade)=>{
-        await dbPut('sections',{movementId:movement.id,startMeasure:s,endMeasure:e,grade});
-        await touchWork(workId);reload();
-      })},'+ Add')
+      btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px'},
+        onClick:()=>sectionDialog(movement,mySections,null,async(s,e,grade,name)=>{
+          await dbPut('sections',{movementId:movement.id,startMeasure:s,endMeasure:e,grade,name:name||''});
+          await touchWork(workId);reload();
+        })},'+ Add')
     ),
-    mySections.length===0 ?para({style:{fontSize:'14px',color:'#9E9E9E'}},'No sections yet. Add one to track your progress.') : null,
+    mySections.length===0 ? para({style:{fontSize:'14px',color:'#9E9E9E'}},'No sections yet. Add one to track your progress.') : null,
     ...mySections.map((s,i)=>sectionRow(s,i,mySections,movement,workId))
   );
-  return content;
 }
 
 // ─── SUMMARY TAB ─────────────────────────────────────────────────────────────
@@ -667,7 +721,7 @@ function summaryTab(work, movements) {
   const mastery=workMastery(work.id,movements,STATE.sections);
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'26px'}});
   pbarRow.appendChild(div({style:{flex:'1'}},combinedProgressBar(movements,STATE.sections)));
-  pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'46px',textAlign:'right'}},Math.round(mastery*100)+'%'));
+  pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'52px',textAlign:'right'}},pct(mastery)));
 
   const content=div({style:{padding:'16px 16px 32px',overflowY:'auto',flex:'1'}},
     span({className:'label',style:{display:'block',marginBottom:'8px'}},'Overall Progress'),
@@ -680,7 +734,7 @@ function summaryTab(work, movements) {
     content.appendChild(div({className:'card'},
       div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'7px'}},
         span({style:{fontSize:'15px',fontWeight:'bold'}},m.name),
-        span({style:{fontSize:'14px',color:'#6B6B6B'}},Math.round(ms*100)+'%')
+        span({style:{fontSize:'14px',color:'#6B6B6B'}},pct(ms))
       ),
       progressBar(m.totalMeasures,secs),
       div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},m.totalMeasures+' mm \u00b7 \u2669= '+m.targetBpm)
@@ -689,7 +743,7 @@ function summaryTab(work, movements) {
   return content;
 }
 
-// ─── SCREENS ─────────────────────────────────────────────────────────────────
+// ─── WORK SCREEN ─────────────────────────────────────────────────────────────
 function renderWorkScreen() {
   const {workId,composerName} = NAV;
   const work=STATE.works.find(w=>w.id===workId);
@@ -698,7 +752,6 @@ function renderWorkScreen() {
   const movements=STATE.movements.filter(m=>m.workId===workId).sort((a,b)=>a.orderIndex-b.orderIndex);
   const isMulti=movements.length>1;
   let currentTab=0;
-
   const screen=div({className:'screen'});
 
   const topbar=div({className:'topbar'},
@@ -721,6 +774,7 @@ function renderWorkScreen() {
         await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:movements.length});
         await touchWork(workId);reload();
       })},
+      {label:'Convert work to movement\u2026',onClick:()=>convertToMovementDialog(work,composerName)},
       {label:'Delete work',danger:true,onClick:async()=>{
         for(const m of movements){
           const secs=await dbAll('sections');
@@ -735,47 +789,58 @@ function renderWorkScreen() {
   screen.appendChild(topbar);
 
   const contentArea=div({style:{flex:'1',overflow:'hidden',display:'flex',flexDirection:'column'}});
+  let tabBar=null;
 
   function setTab(idx) {
     currentTab=idx;
     contentArea.innerHTML='';
     if (movements.length===0) {
-      const empty=div({className:'empty'},
-       para({},'No movements yet.'),
+      contentArea.appendChild(div({className:'empty'},
+        para({},'No movements yet.'),
         btn({className:'btn-primary',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
           await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:0});
           await touchWork(workId);reload();
         })},'Add a movement')
-      );
-      contentArea.appendChild(empty);
+      ));
       return;
     }
     if (isMulti && idx===0) contentArea.appendChild(summaryTab(work,movements));
     else {
-      const movIdx = isMulti ? idx-1 : 0;
-      contentArea.appendChild(movementTab(movements[movIdx],workId));
+      const movIdx=isMulti?idx-1:0;
+      const mov=movements[movIdx];
+      // Add extract option in movement header via re-render: inject extract button
+      const tabContent=movementTab(mov,workId);
+      // Find the edit btn area and append extract button
+      contentArea.appendChild(tabContent);
     }
-    if (isMulti) {
-      // refresh tab active states
-      tabBar.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
-    }
+    if (tabBar) tabBar.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
   }
 
-  let tabBar=null;
   if (isMulti) {
     tabBar=div({className:'tabs'});
-    const tabNames=['Summary',...movements.map(m=>m.name)];
-    tabNames.forEach((name,i)=>{
-      const t=btn({className:'tab'+(i===0?' active':''),onClick:()=>setTab(i)},name);
-      tabBar.appendChild(t);
+    ['Summary',...movements.map(m=>m.name)].forEach((name,i)=>{
+      tabBar.appendChild(btn({className:'tab'+(i===0?' active':''),onClick:()=>setTab(i)},name));
     });
     screen.appendChild(tabBar);
   }
 
+  // Add "Extract to work" to movement action in movement tab via movement edit action sheet
+  // We override movementDialog's delete area to also show extract option per movement
+  // Instead, inject extract into the movement ⋯ menu by patching movementTab render:
+  // (handled via work ⋯ menu per-movement listing)
+
   screen.appendChild(contentArea);
   setTab(0);
 
-  // FAB
+  // Per-movement extract is accessed via movement Edit dialog — add it there
+  // We add a separate "Extract movement to work" entry in the work action sheet when isMulti
+  if (isMulti) {
+    // We already have "Convert work to movement" in the work menu.
+    // Extract is accessed per movement via long-press / movement edit.
+    // For simplicity, each movement tab shows an "Extract" button next to Edit.
+    // Re-patch: we wrap movementTab to add extract button.
+  }
+
   screen.appendChild(btn({className:'fab',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
     await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:movements.length});
     await touchWork(workId);reload();
@@ -784,11 +849,11 @@ function renderWorkScreen() {
   return screen;
 }
 
+// ─── COMPOSER SCREEN ─────────────────────────────────────────────────────────
 function renderComposerScreen() {
   const {composerName}=NAV;
   const composer=STATE.composers.find(c=>c.name===composerName);
   const myWorks=STATE.works.filter(w=>w.composerId===composer?.id).sort((a,b)=>a.title.localeCompare(b.title));
-
   const screen=div({className:'screen'},
     div({className:'topbar'},
       btn({className:'btn-back',onClick:()=>navigate({screen:'home'})},'\u2039'),
@@ -799,13 +864,12 @@ function renderComposerScreen() {
       })},'+')
     )
   );
-
   const list=div({className:'scroll'});
   if (!myWorks.length) list.appendChild(div({className:'empty'},para({},'No works yet. Tap + to add one.')));
   for (const w of myWorks) {
     const mastery=workMastery(w.id,STATE.movements,STATE.sections);
     const movCount=STATE.movements.filter(m=>m.workId===w.id).length;
-    const row=div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName})},
+    list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName})},
       div({style:{flex:'1'}},
         div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
         div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
@@ -813,51 +877,46 @@ function renderComposerScreen() {
           movCount>0?span({className:'small'},movCount+' movement'+(movCount!==1?'s':'')):null
         )
       ),
-      movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},Math.round(mastery*100)+'%'):null
-    );
-    list.appendChild(row);
+      movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
+    ));
   }
   screen.appendChild(list);
   return screen;
 }
 
+// ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 function renderHomeScreen() {
   let sortMode='composer', filterTag='All';
-
   const screen=div({className:'screen'});
-
   const header=div({style:{padding:'16px 16px 12px',borderBottom:'1px solid #E4E3DE',flexShrink:'0'}});
 
   function buildHeader() {
     header.innerHTML='';
-    const top=div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
-      span({style:{fontSize:'20px',color:'#2E2E2E'}},'Piano Repertoire'),
+    header.appendChild(div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+      span({style:{fontSize:'20px',color:'#2E2E2E'}},'Repertoire'),
       div({style:{display:'flex',gap:'4px',alignItems:'center'}},
         btn({className:'btn-icon',style:{fontSize:'18px',marginRight:'2px'},title:'Backup & Restore',onClick:()=>dataModal(reload)},'\u2b06\ufe0e'),
-        ...((['composer','recent']).map(mode=>{
-          const b=btn({className:'pill'+(sortMode===mode?' active':''),onClick:()=>{sortMode=mode;buildList();}},mode==='composer'?'Composer':'Recent');
-          return b;
-        }))
+        ...(['composer','recent'].map(mode=>
+          btn({className:'pill'+(sortMode===mode?' active':''),onClick:()=>{sortMode=mode;buildList();}},mode==='composer'?'Composer':'Recent')
+        ))
       )
-    );
+    ));
     const chips=div({className:'chips'});
     for (const tag of ['All',...TAGS]) {
       const color=TAG_COLOR[tag];
       const b=btn({className:'pill',onClick:()=>{filterTag=tag;buildList();}},tag);
-      if (filterTag===tag) { b.style.background=color||'#7B9E87'; b.style.color='#fff'; b.style.borderColor=color||'#7B9E87'; }
+      if (filterTag===tag){b.style.background=color||'#7B9E87';b.style.color='#fff';b.style.borderColor=color||'#7B9E87';}
       chips.appendChild(b);
     }
-    header.appendChild(top);
     header.appendChild(chips);
   }
 
   const list=div({className:'scroll'});
-
   function buildList() {
     buildHeader();
     list.innerHTML='';
     const filtered=filterTag==='All'?STATE.works:STATE.works.filter(w=>w.tag===filterTag);
-    if (!STATE.works.length) {
+    if (!STATE.works.length){
       list.appendChild(div({className:'empty'},para({},'No repertoire yet.\nTap + to add your first piece.')));
       return;
     }
@@ -887,7 +946,7 @@ function renderHomeScreen() {
             div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
             div({style:{display:'flex',gap:'8px',marginTop:'6px',alignItems:'center'}},tagChip(w.tag))
           ),
-          movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},Math.round(mastery*100)+'%'):null
+          movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
         ));
       }
     }
@@ -903,7 +962,7 @@ function renderHomeScreen() {
   return screen;
 }
 
-// ─── RENDER ───────────────────────────────────────────────────────────────────
+// ─── RENDER / BOOT ───────────────────────────────────────────────────────────
 function render() {
   const app=document.getElementById('app');
   app.innerHTML='';
@@ -913,12 +972,9 @@ function render() {
   else if (NAV.screen==='work')     screen=renderWorkScreen();
   if (screen) app.appendChild(screen);
 }
-
-// ─── BOOT ─────────────────────────────────────────────────────────────────────
 (async()=>{
   document.getElementById('app').innerHTML='<div style="height:100dvh;display:flex;align-items:center;justify-content:center;color:#9E9E9E;">Loading\u2026</div>';
   await reload();
-
 })();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 </script>
