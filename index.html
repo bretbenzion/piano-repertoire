@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+<meta name="theme-color" content="#7B9E87"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-title" content="Repertoire"/>
+<title>Piano Repertoire</title>
+<link rel="manifest" href="manifest.json"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;font-family:Georgia,"Times New Roman",serif;background:#F5F4F0;color:#2E2E2E;overscroll-behavior:none}
+input,button,textarea{font-family:inherit}
+button{cursor:pointer}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#ccc;border-radius:4px}
+
+/* Layout */
+.screen{display:flex;flex-direction:column;height:100dvh;background:#F5F4F0;position:fixed;inset:0;overflow:hidden}
+.topbar{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;border-bottom:1px solid #E4E3DE;flex-shrink:0;background:#F5F4F0}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.row{padding:14px 16px;border-bottom:1px solid #E4E3DE;cursor:pointer;display:flex;justify-content:space-between;align-items:flex-start}
+.row:active{background:#EFEEE9}
+
+/* Typography */
+.title{font-size:18px;color:#2E2E2E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:13px;color:#6B6B6B}
+.label{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#6B6B6B;text-transform:uppercase}
+.small{font-size:12px;color:#9E9E9E}
+
+/* Buttons */
+.btn{background:none;border:none;color:#7B9E87;font-size:14px;padding:8px 16px;border-radius:7px;font-family:inherit}
+.btn-primary{background:#7B9E87;color:#fff;border:none;font-size:14px;padding:9px 20px;border-radius:7px;font-family:inherit}
+.btn-back{background:none;border:none;font-size:26px;color:#7B9E87;padding:0 6px 0 0;line-height:1;flex-shrink:0}
+.btn-icon{background:none;border:none;font-size:22px;color:#9E9E9E;padding:4px 6px;line-height:1}
+.btn-plus{background:none;border:none;font-size:26px;color:#7B9E87;line-height:1;padding:4px}
+.fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:28px;background:#7B9E87;color:#fff;border:none;font-size:30px;box-shadow:0 4px 16px rgba(0,0,0,.22);display:flex;align-items:center;justify-content:center}
+.pill{font-size:12px;padding:5px 12px;border:1px solid #E4E3DE;border-radius:20px;background:transparent;color:#6B6B6B;white-space:nowrap;flex-shrink:0}
+.pill.active{background:#7B9E87;color:#fff;border-color:#7B9E87}
+
+/* Tag chip */
+.chip{font-size:11px;border-radius:4px;padding:2px 7px;display:inline-block}
+
+/* Cards */
+.card{background:#EFEEE9;border-radius:10px;padding:14px;margin-bottom:10px}
+
+/* Progress bar */
+.pbar{display:flex;height:14px;border-radius:6px;overflow:hidden;width:100%}
+
+/* Grade badge */
+.grade-badge{color:#fff;border-radius:6px;padding:5px 10px;font-weight:bold;font-size:14px;min-width:42px;text-align:center;flex-shrink:0}
+
+/* Tabs */
+.tabs{display:flex;border-bottom:1px solid #E4E3DE;overflow-x:auto;flex-shrink:0;background:#F5F4F0}
+.tab{font-size:13px;padding:10px 16px;white-space:nowrap;background:none;border:none;color:#6B6B6B;border-bottom:2.5px solid transparent;font-family:inherit}
+.tab.active{color:#7B9E87;border-bottom-color:#7B9E87}
+
+/* Filter chips row */
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.38);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal{background:#F5F4F0;border-radius:14px;width:100%;max-width:440px;max-height:90dvh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.modal-head{padding:20px 20px 0;display:flex;justify-content:space-between;align-items:center}
+.modal-body{padding:16px 20px 0}
+.modal-foot{padding:16px 20px 20px;display:flex;justify-content:flex-end;gap:8px}
+.modal-close{background:none;border:none;font-size:24px;color:#9E9E9E;line-height:1;padding:0 0 0 8px}
+
+/* Action sheet */
+.sheet-overlay{position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.28)}
+.sheet{position:absolute;bottom:0;left:0;right:0;background:#F5F4F0;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,16px)}
+.sheet-handle{width:40px;height:4px;background:#E4E3DE;border-radius:2px;margin:12px auto 4px}
+.sheet-btn{display:block;width:100%;text-align:left;padding:15px 24px;background:none;border:none;font-size:16px;color:#2E2E2E;font-family:inherit;border-top:1px solid #E4E3DE}
+.sheet-btn:first-of-type{border-top:none}
+.sheet-btn.danger{color:#BB5050}
+
+/* Form fields */
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:12px;color:#6B6B6B}
+.field input{font-size:15px;padding:9px 12px;border:1.5px solid #E4E3DE;border-radius:7px;background:#fff;color:#2E2E2E;outline:none;width:100%}
+.field input:focus{border-color:#7B9E87}
+.field .err{font-size:12px;color:#BB5050}
+.row-fields{display:flex;gap:10px}
+
+/* Grade grid */
+.grade-grid{display:flex;flex-direction:column;gap:5px}
+.grade-row{display:flex;gap:5px}
+.grade-btn{flex:1;padding:10px 0;border:none;border-radius:7px;font-size:14px;font-family:inherit}
+
+/* Warn box */
+.warn{background:#FFF3CD;border:1px solid #F0CC60;border-radius:9px;padding:14px}
+.warn-title{font-size:14px;font-weight:bold;color:#7A5C00;margin-bottom:6px}
+.warn-body{font-size:13px;color:#7A5C00;margin-bottom:12px;line-height:1.5}
+.warn-btns{display:flex;gap:8px}
+.warn-cancel{flex:1;padding:9px 0;background:none;border:1px solid #ccc;border-radius:7px;font-size:14px;font-family:inherit}
+.warn-ok{flex:1;padding:9px 0;background:#BB5050;color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:bold;font-family:inherit}
+
+/* Info box */
+.infobox{margin-top:20px;padding:12px 14px;background:#EFEEE9;border-radius:9px;border:1px solid #E4E3DE}
+.infobox-title{font-size:12px;font-weight:bold;color:#6B6B6B;margin-bottom:4px}
+.infobox-body{font-size:12px;color:#6B6B6B;line-height:1.6}
+
+/* Status */
+.status-ok{font-size:13px;margin-top:14px;padding:10px 14px;border-radius:8px;background:#E8F5E9;color:#2E7D32}
+.status-err{font-size:13px;margin-top:14px;padding:10px 14px;border-radius:8px;background:#FDECEA;color:#BB5050}
+
+/* Empty state */
+.empty{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px}
+.empty p{color:#9E9E9E;text-align:center;line-height:1.8}
+
+/* Section content area */
+.section-content{padding:16px 16px 100px;overflow-y:auto;flex:1}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const GRADES = ['A+','A','A-','B+','B','B-','C','D','E'];
+const GRADE_MASTERY = {'A+':1,'A':1,'A-':.9,'B+':0.8,'B':.75,'B-':.7,'C':.5,'D':.25,'E':0};
+const GRADE_COLOR = {
+  'A+':'#2A5FA8','A':'#4A87CC','A-':'#7AAEDD',
+  'B+':'#2E7D4F','B':'#4E9E6E','B-':'#7BBF96',
+  'C':'#BFAA3A','D':'#CC8040','E':'#BB5050'
+};
+const TAGS = ['Current','Finished','Shelved'];
+const TAG_COLOR = {Current:'#7B9E87',Finished:'#8599AE',Shelved:'#9E9E9E'};
+
+// ─── DATABASE ─────────────────────────────────────────────────────────────────
+let _db = null;
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((res,rej) => {
+    const r = indexedDB.open('piano_repertoire',1);
+    r.onupgradeneeded = e => {
+      const db = e.target.result;
+      const mk = (n,idx) => {
+        if (!db.objectStoreNames.contains(n)) {
+          const s = db.createObjectStore(n,{keyPath:'id',autoIncrement:true});
+          if (idx) s.createIndex(idx,idx);
+        }
+      };
+      mk('composers'); mk('works','composerId'); mk('movements','workId'); mk('sections','movementId');
+    };
+    r.onsuccess = e => { _db = e.target.result; res(_db); };
+    r.onerror   = () => rej(r.error);
+  });
+}
+const dbAll = store => new Promise((res,rej) => {
+  const r = _db.transaction(store,'readonly').objectStore(store).getAll();
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+});
+const dbPut = (store,obj) => new Promise((res,rej) => {
+  const r = _db.transaction(store,'readwrite').objectStore(store).put(obj);
+  r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+});
+const dbDel = (store,id) => new Promise((res,rej) => {
+  const r = _db.transaction(store,'readwrite').objectStore(store).delete(id);
+  r.onsuccess = () => res(); r.onerror = () => rej(r.error);
+});
+async function loadAll() {
+  await openDB();
+  const [composers,works,movements,sections] = await Promise.all(
+    ['composers','works','movements','sections'].map(dbAll)
+  );
+  return {composers,works,movements,sections};
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function movMastery(mov, sections) {
+  const total = mov.totalMeasures||0; if (!total) return 0;
+  const mine = sections.filter(s=>s.movementId===mov.id);
+  return mine.reduce((sum,s) => {
+    const n = Math.max(0,Math.min(s.endMeasure,total)-s.startMeasure+1);
+    return sum + n*(GRADE_MASTERY[s.grade]||0);
+  },0) / total;
+}
+function workMastery(workId,movements,sections) {
+  const mine = movements.filter(m=>m.workId===workId);
+  const total = mine.reduce((s,m)=>s+(m.totalMeasures||0),0);
+  if (!total) return 0;
+  return mine.reduce((s,m)=>s+movMastery(m,sections)*(m.totalMeasures||0),0)/total;
+}
+async function touchWork(workId) {
+  const ws = await dbAll('works'), w = ws.find(x=>x.id===workId);
+  if (w) await dbPut('works',{...w,lastWorked:Date.now()});
+}
+async function pruneComposer(cId) {
+  const ws = await dbAll('works');
+  if (!ws.some(w=>w.composerId===cId)) await dbDel('composers',cId);
+}
+async function getOrCreateComposer(name) {
+  const all = await dbAll('composers'), ex = all.find(c=>c.name===name);
+  return ex ? ex.id : await dbPut('composers',{name});
+}
+
+// ─── EXPORT / IMPORT ─────────────────────────────────────────────────────────
+async function exportJSON() {
+  const data = await loadAll();
+  const blob = new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),...data},null,2)],{type:'application/json'});
+  dl(blob,'piano-repertoire-'+today()+'.json');
+}
+async function exportCSV() {
+  const {composers,works,movements,sections} = await loadAll();
+  const rows=[['Composer','Work','Tag','Movement','Total Measures','Target BPM','Start','End','Grade','Mastery%']];
+  for (const comp of composers) {
+    for (const w of works.filter(x=>x.composerId===comp.id)) {
+      const wm = movements.filter(m=>m.workId===w.id);
+      if (!wm.length){rows.push([comp.name,w.title,w.tag,'','','','','','','']);continue;}
+      for (const m of wm){
+        const ms=sections.filter(s=>s.movementId===m.id);
+        const pct=Math.round(movMastery(m,sections)*100)+'%';
+        if (!ms.length){rows.push([comp.name,w.title,w.tag,m.name,m.totalMeasures,m.targetBpm,'','','',pct]);continue;}
+        for(const s of ms) rows.push([comp.name,w.title,w.tag,m.name,m.totalMeasures,m.targetBpm,s.startMeasure,s.endMeasure,s.grade,pct]);
+      }
+    }
+  }
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  dl(new Blob([csv],{type:'text/csv'}),'piano-repertoire-'+today()+'.csv');
+}
+async function importJSON(text) {
+  let p; try{p=JSON.parse(text);}catch{throw new Error('Invalid JSON');}
+  const {composers,works,movements,sections}=p;
+  if(!composers||!works||!movements||!sections) throw new Error('Missing data');
+  await openDB();
+  for(const store of ['sections','movements','works','composers']){
+    const all=await dbAll(store); for(const i of all) await dbDel(store,i.id);
+  }
+  for(const i of composers) await dbPut('composers',i);
+  for(const i of works)     await dbPut('works',i);
+  for(const i of movements) await dbPut('movements',i);
+  for(const i of sections)  await dbPut('sections',i);
+}
+const today=()=>new Date().toISOString().slice(0,10);
+function dl(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+
+// ─── DOM HELPERS ─────────────────────────────────────────────────────────────
+function el(tag, props={}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k,v] of Object.entries(props)) {
+    if (k==='style' && typeof v==='object') Object.assign(e.style,v);
+    else if (k.startsWith('on') && typeof v==='function') e.addEventListener(k.slice(2).toLowerCase(),v);
+    else if (k==='className') e.className=v;
+    else e.setAttribute(k,v);
+  }
+  for (const ch of children.flat()) {
+    if (ch==null||ch===false) continue;
+    e.appendChild(typeof ch==='string'||typeof ch==='number' ? document.createTextNode(String(ch)) : ch);
+  }
+  return e;
+}
+const div  = (p,...c) => el('div',p,...c);
+const span = (p,...c) => el('span',p,...c);
+const btn  = (p,...c) => el('button',p,...c);
+const inp  = (p)      => el('input',p);
+const para = (p,...c) => el('p',p,...c);
+
+// ─── SMALL COMPONENTS ────────────────────────────────────────────────────────
+function tagChip(tag) {
+  const color = TAG_COLOR[tag]||'#9E9E9E';
+  return span({className:'chip', style:{color,background:color+'22'}}, tag);
+}
+function gradeBadge(grade) {
+  return div({className:'grade-badge',style:{background:GRADE_COLOR[grade]}}, grade);
+}
+function progressBar(totalMeasures, sections, height=14) {
+  const bar = div({className:'pbar'});
+  if (!totalMeasures) { bar.style.background='#CCCCC8'; return bar; }
+  const sorted = [...sections].sort((a,b)=>a.startMeasure-b.startMeasure);
+  const segs=[]; let cur=1;
+  for (const s of sorted) {
+    if (s.startMeasure>cur) segs.push({n:s.startMeasure-cur,color:'#CCCCC8'});
+    segs.push({n:s.endMeasure-s.startMeasure+1,color:GRADE_COLOR[s.grade]});
+    cur=s.endMeasure+1;
+  }
+  if (cur<=totalMeasures) segs.push({n:totalMeasures-cur+1,color:'#CCCCC8'});
+  for (const s of segs) {
+    const seg=div({style:{flex:s.n,background:s.color,height:'100%'}});
+    bar.appendChild(seg);
+  }
+  return bar;
+}
+function combinedProgressBar(movements, sections) {
+  const bar = div({className:'pbar'});
+  const total=movements.reduce((s,m)=>s+(m.totalMeasures||0),0);
+  if (!total){bar.style.background='#CCCCC8';return bar;}
+  for (const m of movements) {
+    const t=m.totalMeasures||0; if(!t) continue;
+    const ms=sections.filter(s=>s.movementId===m.id).sort((a,b)=>a.startMeasure-b.startMeasure);
+    let cur=1;
+    for (const s of ms) {
+      if(s.startMeasure>cur) bar.appendChild(div({style:{flex:s.startMeasure-cur,background:'#CCCCC8',height:'100%'}}));
+      bar.appendChild(div({style:{flex:s.endMeasure-s.startMeasure+1,background:GRADE_COLOR[s.grade],height:'100%'}}));
+      cur=s.endMeasure+1;
+    }
+    if(cur<=t) bar.appendChild(div({style:{flex:t-cur+1,background:'#CCCCC8',height:'100%'}}));
+  }
+  return bar;
+}
+
+// ─── MODAL ───────────────────────────────────────────────────────────────────
+function modal(title, bodyEl, footerEl, onClose) {
+  const overlay = div({className:'overlay'});
+  const m = div({className:'modal'},
+    div({className:'modal-head'},
+      span({style:{fontSize:'18px'}}, title),
+      btn({className:'modal-close', onClick:onClose}, '×')
+    ),
+    div({className:'modal-body'}, bodyEl),
+    footerEl && div({className:'modal-foot'}, footerEl)
+  );
+  overlay.appendChild(m);
+  overlay.addEventListener('click', e => { if(e.target===overlay) onClose(); });
+  document.body.appendChild(overlay);
+  return { remove: () => overlay.remove() };
+}
+
+// ─── ACTION SHEET ────────────────────────────────────────────────────────────
+function actionSheet(items) {
+  const overlay = div({className:'sheet-overlay'});
+  const sheet   = div({className:'sheet'}, div({className:'sheet-handle'}));
+  const close   = () => overlay.remove();
+  for (const item of items) {
+    const b = btn({className:'sheet-btn'+(item.danger?' danger':''), onClick:()=>{close();item.onClick();}}, item.label);
+    sheet.appendChild(b);
+  }
+  overlay.appendChild(sheet);
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) close(); });
+  document.body.appendChild(overlay);
+}
+
+// ─── FIELD HELPER ────────────────────────────────────────────────────────────
+function fieldEl(labelText, value, onChange, opts={}) {
+  const wrap = div({className:'field'+(opts.style?' ':''), style:opts.flex?{flex:1}:{}});
+  if (labelText) wrap.appendChild(el('label',{}, labelText));
+  const input = inp({
+    type: opts.type||'text',
+    inputmode: opts.type==='number'?'numeric':'text',
+    value: value||'',
+    placeholder: opts.placeholder||''
+  });
+  if (opts.autoFocus) setTimeout(()=>input.focus(),50);
+  input.addEventListener('input', ()=>onChange(input.value));
+  wrap.appendChild(input);
+  const errSpan = span({className:'err',style:{display:'none'}});
+  wrap.appendChild(errSpan);
+  wrap._input = input;
+  wrap._err   = errSpan;
+  wrap.setError = msg => { errSpan.textContent=msg; errSpan.style.display=msg?'':'none'; input.style.borderColor=msg?'#BB5050':'#E4E3DE'; };
+  return wrap;
+}
+
+// ─── GRADE SELECTOR ──────────────────────────────────────────────────────────
+function gradeSelector(current, onChange) {
+  const rows=[['A+','A','A-'],['B+','B','B-'],['C','D','E']];
+  let selected = current;
+  const wrap = div({className:'grade-grid'});
+  const allBtns = {};
+  function refresh() {
+    for (const [g,b] of Object.entries(allBtns)) {
+      b.style.background = g===selected ? GRADE_COLOR[g] : GRADE_COLOR[g]+'40';
+      b.style.color      = g===selected ? '#fff' : '#2E2E2E';
+      b.style.fontWeight = g===selected ? 'bold' : 'normal';
+    }
+  }
+  for (const row of rows) {
+    const rowEl = div({className:'grade-row'});
+    for (const g of row) {
+      const b = btn({className:'grade-btn', onClick:()=>{ selected=g; refresh(); onChange(g); }}, g);
+      allBtns[g] = b; rowEl.appendChild(b);
+    }
+    wrap.appendChild(rowEl);
+  }
+  refresh();
+  return wrap;
+}
+
+// ─── DIALOGS ─────────────────────────────────────────────────────────────────
+function workDialog(initial, onSave) {
+  let composer=initial?.composer||'', title=initial?.title||'';
+  let grade;
+  const fComp  = fieldEl('Composer', composer, v=>composer=v, {autoFocus:true, placeholder:'e.g. Chopin'});
+  const fTitle = fieldEl('Title',    title,    v=>title=v,    {placeholder:'e.g. Ballade No. 1 in G minor'});
+  const body   = div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fComp, fTitle);
+  const foot   = div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
+    btn({className:'btn-primary', onClick:()=>{
+      if(!composer.trim()||!title.trim()) return;
+      m.remove(); onSave(composer.trim(),title.trim());
+    }}, initial?'Save':'Add')
+  );
+  const m = modal(initial?'Edit Work':'Add Work', body, foot, ()=>m.remove());
+}
+
+function movementDialog(initial, onSave, onDelete) {
+  let name=initial?.name||'', measures=initial?.totalMeasures?.toString()||'', bpm=initial?.targetBpm?.toString()||'';
+  const fName = fieldEl('Movement name', name,    v=>name=v,    {autoFocus:true});
+  const fMeas = fieldEl('Total measures',measures, v=>measures=v,{type:'number',flex:true});
+  const fBpm  = fieldEl('Target BPM',   bpm,      v=>bpm=v,    {type:'number',flex:true});
+  const err   = span({className:'err',style:{display:'none'}});
+  const rowF  = div({className:'row-fields'}, fMeas, fBpm);
+  const bodyParts = [div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fName, rowF, err)];
+  if (initial && onDelete) {
+    const delBtn = btn({className:'btn', style:{color:'#BB5050',borderTop:'1px solid #E4E3DE',paddingTop:'12px',marginTop:'4px'},
+      onClick:()=>{ m.remove(); onDelete(); }}, 'Delete this movement');
+    bodyParts[0].appendChild(delBtn);
+  }
+  const foot = div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
+    btn({className:'btn-primary', onClick:()=>{
+      const mv=parseInt(measures), bv=parseInt(bpm);
+      if(!name.trim()||isNaN(mv)||isNaN(bv)){err.textContent='Fill in all fields';err.style.display='';return;}
+      if(mv<=0||bv<=0){err.textContent='Values must be > 0';err.style.display='';return;}
+      m.remove(); onSave(name.trim(),mv,bv);
+    }}, initial?'Save':'Add')
+  );
+  const m = modal(initial?'Edit Movement':'Add Movement', bodyParts[0], foot, ()=>m.remove());
+}
+
+function sectionDialog(movement, allSections, editSection, onSave) {
+  let start=editSection?.startMeasure?.toString()||'', end=editSection?.endMeasure?.toString()||'', grade=editSection?.grade||'B';
+  const fStart = fieldEl('Start measure', start, v=>start=v, {type:'number',autoFocus:true,flex:true});
+  const fEnd   = fieldEl('End measure',   end,   v=>end=v,   {type:'number',flex:true});
+  const err    = span({className:'err',style:{display:'none'}});
+  const gs     = gradeSelector(grade, g=>grade=g);
+  const body   = div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
+    div({className:'row-fields'}, fStart, fEnd), err,
+    div({},el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Grade'), gs)
+  );
+  const foot = div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
+    btn({className:'btn-primary', onClick:()=>{
+      const s=parseInt(start),e=parseInt(end);
+      if(isNaN(s)||isNaN(e)){setErr('Enter valid measure numbers');return;}
+      if(s<1||e>movement.totalMeasures){setErr('Must be within 1\u2013'+movement.totalMeasures);return;}
+      if(s>e){setErr('Start must be \u2264 end');return;}
+      if(allSections.some(sec=>sec.id!==(editSection?.id??-1)&&e>=sec.startMeasure&&s<=sec.endMeasure)){setErr('Overlaps an existing section');return;}
+      m.remove(); onSave(s,e,grade);
+    }}, 'Save')
+  );
+  const setErr=msg=>{err.textContent=msg;err.style.display=msg?'':'none';};
+  const m = modal(editSection?'Edit Section':'Add Section', body, foot, ()=>m.remove());
+}
+
+function splitDialog(section, onSplit) {
+  let at='';
+  const f   = fieldEl('Split after measure', '', v=>at=v, {type:'number',autoFocus:true});
+  const err = span({className:'err',style:{display:'none'}});
+  const body= div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
+   para({style:{fontSize:'14px',color:'#6B6B6B',lineHeight:'1.5'}},
+      'Section spans mm. '+section.startMeasure+'\u2013'+section.endMeasure+'. Enter the last measure of the first half:'),
+    f, err
+  );
+  const foot = div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:()=>{
+      const n=parseInt(at);
+      if(isNaN(n)||n<section.startMeasure||n>=section.endMeasure){
+        err.textContent='Enter a measure between '+section.startMeasure+' and '+(section.endMeasure-1);
+        err.style.display='';return;
+      }
+      m.remove(); onSplit(n);
+    }},'Split')
+  );
+  const m = modal('Split Section', body, foot, ()=>m.remove());
+}
+
+function mergeDialog(section, prev, next, onMerge) {
+  let mergeWith=prev||next, grade=section.grade;
+  const both=prev&&next;
+  const bodyParts=[];
+  if (both) {
+    const lbl=el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Merge with:');
+    bodyParts.push(lbl);
+    for (const other of [prev,next]) {
+      const rb=el('input',{type:'radio'}); rb.checked=(mergeWith.id===other.id);
+      const lbEl=el('label',{style:{display:'flex',alignItems:'center',gap:'10px',fontSize:'14px',padding:'6px 0',cursor:'pointer'}},
+        rb,(other===prev?'Previous':'Next')+' (mm. '+other.startMeasure+'\u2013'+other.endMeasure+' \u00b7 '+other.grade+')');
+      lbEl.addEventListener('click',()=>{mergeWith=other;rb.checked=true;});
+      bodyParts.push(lbEl);
+    }
+  } else {
+    bodyParts.push(para({style:{fontSize:'14px',color:'#6B6B6B'}},
+      'Merging with mm. '+mergeWith.startMeasure+'\u2013'+mergeWith.endMeasure+' ('+mergeWith.grade+').'));
+  }
+  const gLbl=el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px',marginTop:'14px'}},'Grade for merged section:');
+  const gs=gradeSelector(grade,g=>grade=g);
+  const body=div({style:{display:'flex',flexDirection:'column',gap:'0px'}},...bodyParts,gLbl,gs);
+  const foot=div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:()=>{m.remove();onMerge(mergeWith,grade);}},'Merge')
+  );
+  const m=modal('Merge Sections',body,foot,()=>m.remove());
+}
+
+function tagDialog(current, onSelect) {
+  const body=div({style:{display:'flex',flexDirection:'column',marginBottom:'4px'}});
+  for (const [i,tag] of TAGS.entries()) {
+    const color=TAG_COLOR[tag];
+    const chip=span({className:'chip',style:{color,background:color+'22'}},tag);
+    const rb=el('input',{type:'radio'}); rb.checked=(tag===current);
+    const row=el('label',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 4px',
+      cursor:'pointer',borderTop:i>0?'1px solid #E4E3DE':'none'}},rb,chip,span({style:{fontSize:'15px',color:'#2E2E2E'}},tag));
+    row.addEventListener('click',()=>{m.remove();onSelect(tag);});
+    body.appendChild(row);
+  }
+  const foot=btn({className:'btn',onClick:()=>m.remove()},'Cancel');
+  const m=modal('Set tag',body,div({},foot),()=>m.remove());
+}
+
+function dataModal(onReload) {
+  let confirmFile=null;
+  const statusEl=div({style:{display:'none'}});
+  function setStatus(msg,ok) {
+    statusEl.textContent=msg; statusEl.className=ok?'status-ok':'status-err';
+    statusEl.style.display=msg?'':'none';
+  }
+  const fileInput=el('input',{type:'file',accept:'.json',style:{display:'none'}});
+  fileInput.addEventListener('change',()=>{
+    const f=fileInput.files[0]; if(!f) return;
+    confirmFile=f; renderConfirm();
+  });
+  const confirmArea=div();
+  function renderConfirm() {
+    confirmArea.innerHTML='';
+    if (!confirmFile) {
+      confirmArea.appendChild(btn({className:'btn',style:{textAlign:'left',background:'#EFEEE9',border:'1px solid #E4E3DE',borderRadius:'9px',padding:'13px 16px',width:'100%'},
+        onClick:()=>fileInput.click()},
+        div({style:{fontWeight:'bold'}},'Import from JSON backup'),
+        div({style:{fontSize:'12px',color:'#6B6B6B',marginTop:'2px'}},'Restores a previously exported .json file')
+      ));
+    } else {
+      confirmArea.appendChild(div({className:'warn'},
+        div({className:'warn-title'},'\u26a0 This will replace all current data'),
+        div({className:'warn-body'},'"'+confirmFile.name+'" will overwrite everything.'),
+        div({className:'warn-btns'},
+          btn({className:'warn-cancel',onClick:()=>{confirmFile=null;renderConfirm();}},'Cancel'),
+          btn({className:'warn-ok',onClick:async()=>{
+            try{await confirmFile.text().then(importJSON);await onReload();setStatus('Import successful!',true);}
+            catch(e){setStatus('Import failed: '+e.message,false);}
+            confirmFile=null;renderConfirm();
+          }},'Yes, import')
+        )
+      ));
+    }
+  }
+  renderConfirm();
+  const body=div({style:{display:'flex',flexDirection:'column',gap:'0',paddingBottom:'24px'}},
+   para({style:{fontSize:'13px',color:'#6B6B6B',lineHeight:'1.6',marginBottom:'18px'}},
+      'Export a backup to save your repertoire. Import replaces all current data.'),
+    div({className:'label',style:{marginBottom:'10px'}},'Export'),
+    btn({className:'btn',style:{textAlign:'left',background:'#EFEEE9',border:'1px solid #E4E3DE',borderRadius:'9px',padding:'13px 16px',marginBottom:'8px',width:'100%'},
+      onClick:async()=>{await exportJSON();setStatus('JSON exported.',true);}},
+      div({style:{fontWeight:'bold'}},'Export as JSON'),
+      div({style:{fontSize:'12px',color:'#6B6B6B',marginTop:'2px'}},'Full backup \u2014 can be re-imported later')
+    ),
+    btn({className:'btn',style:{textAlign:'left',background:'#EFEEE9',border:'1px solid #E4E3DE',borderRadius:'9px',padding:'13px 16px',marginBottom:'20px',width:'100%'},
+      onClick:async()=>{await exportCSV();setStatus('CSV exported.',true);}},
+      div({style:{fontWeight:'bold'}},'Export as CSV'),
+      div({style:{fontSize:'12px',color:'#6B6B6B',marginTop:'2px'}},'Spreadsheet view \u2014 for reference or printing')
+    ),
+    div({className:'label',style:{marginBottom:'10px'}},'Import'),
+    confirmArea, fileInput, statusEl,
+    div({className:'infobox'},
+      div({className:'infobox-title'},'Brave tip'),
+      div({className:'infobox-body'},'Install via Brave menu \u2192 Add to Home Screen. Then go to Brave Settings \u2192 Site & Shields Settings \u2192 [this site] \u2192 Storage \u2192 Allow data storage.')
+    )
+  );
+  const m=modal('Backup & Restore',body,null,()=>m.remove());
+}
+
+// ─── APP STATE ────────────────────────────────────────────────────────────────
+let STATE = {composers:[],works:[],movements:[],sections:[]};
+let NAV   = {screen:'home'};
+
+async function reload() {
+  STATE = await loadAll();
+  render();
+}
+
+function navigate(nav) { NAV=nav; render(); }
+function goBack() {
+  if (NAV.screen==='work')     navigate({screen:'composer',composerName:NAV.composerName});
+  else                         navigate({screen:'home'});
+}
+
+// ─── SECTION ROW ──────────────────────────────────────────────────────────────
+function sectionRow(section, idx, allSections, movement, workId) {
+  const sorted=[...allSections].sort((a,b)=>a.startMeasure-b.startMeasure);
+  const myIdx=sorted.findIndex(s=>s.id===section.id);
+  const prev=myIdx>0?sorted[myIdx-1]:null;
+  const next=myIdx<sorted.length-1?sorted[myIdx+1]:null;
+  const canSplit=section.endMeasure>section.startMeasure;
+  const canMergePrev=prev&&prev.endMeasure===section.startMeasure-1;
+  const canMergeNext=next&&next.startMeasure===section.endMeasure+1;
+
+  const menuItems=[
+    {label:'Edit',onClick:()=>sectionDialog(movement,allSections,section,async(s,e,g)=>{
+      await dbPut('sections',{...section,startMeasure:s,endMeasure:e,grade:g});
+      await touchWork(workId); reload();
+    })},
+    ...(canSplit?[{label:'Split',onClick:()=>splitDialog(section,async at=>{
+      await dbDel('sections',section.id);
+      await dbPut('sections',{movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade});
+      await dbPut('sections',{movementId:section.movementId,startMeasure:at+1,endMeasure:section.endMeasure,grade:section.grade});
+      await touchWork(workId); reload();
+    })}]:[]),
+    ...((canMergePrev||canMergeNext)?[{label:'Merge with adjacent',onClick:()=>mergeDialog(section,canMergePrev?prev:null,canMergeNext?next:null,async(other,grade)=>{
+      const s=Math.min(section.startMeasure,other.startMeasure),e=Math.max(section.endMeasure,other.endMeasure);
+      await dbDel('sections',section.id); await dbDel('sections',other.id);
+      await dbPut('sections',{movementId:section.movementId,startMeasure:s,endMeasure:e,grade});
+      await touchWork(workId); reload();
+    })}]:[]),
+    {label:'Delete section',danger:true,onClick:async()=>{await dbDel('sections',section.id);await touchWork(workId);reload();}}
+  ];
+
+  return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'#EFEEE9',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px'}},
+    gradeBadge(section.grade),
+    div({style:{flex:'1'}},
+      div({style:{fontSize:'14px',fontWeight:'bold',color:'#2E2E2E'}},'Section '+(idx+1)),
+      div({style:{fontSize:'13px',color:'#6B6B6B'}},'mm. '+section.startMeasure+'\u2013'+section.endMeasure)
+    ),
+    btn({className:'btn-icon',onClick:()=>actionSheet(menuItems)},'\u22ef')
+  );
+}
+
+// ─── MOVEMENT TAB ─────────────────────────────────────────────────────────────
+function movementTab(movement, workId) {
+  const mySections=STATE.sections.filter(s=>s.movementId===movement.id).sort((a,b)=>a.startMeasure-b.startMeasure);
+  const mastery=movMastery(movement,STATE.sections);
+
+  const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'22px'}});
+  pbarRow.appendChild(div({style:{flex:'1'}},progressBar(movement.totalMeasures,mySections)));
+  pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'46px',textAlign:'right'}},Math.round(mastery*100)+'%'));
+
+  const content=div({className:'section-content'},
+    div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'14px'}},
+      div({},
+        div({style:{fontSize:'19px',fontWeight:'bold',color:'#2E2E2E'}},movement.name),
+        div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},movement.totalMeasures+' measures \u00b7 \u2669= '+movement.targetBpm)
+      ),
+      btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px',marginTop:'2px'},onClick:()=>movementDialog(movement,async(name,totalMeasures,targetBpm)=>{
+        await dbPut('movements',{...movement,name,totalMeasures,targetBpm});await touchWork(workId);reload();
+      },async()=>{
+        const secs=await dbAll('sections');
+        for(const s of secs.filter(s=>s.movementId===movement.id)) await dbDel('sections',s.id);
+        await dbDel('movements',movement.id);await touchWork(workId);reload();
+      })},'Edit')
+    ),
+    pbarRow,
+    div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
+      span({className:'label'},'Sections'),
+      btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px'},onClick:()=>sectionDialog(movement,mySections,null,async(s,e,grade)=>{
+        await dbPut('sections',{movementId:movement.id,startMeasure:s,endMeasure:e,grade});
+        await touchWork(workId);reload();
+      })},'+ Add')
+    ),
+    mySections.length===0 ?para({style:{fontSize:'14px',color:'#9E9E9E'}},'No sections yet. Add one to track your progress.') : null,
+    ...mySections.map((s,i)=>sectionRow(s,i,mySections,movement,workId))
+  );
+  return content;
+}
+
+// ─── SUMMARY TAB ─────────────────────────────────────────────────────────────
+function summaryTab(work, movements) {
+  const mastery=workMastery(work.id,movements,STATE.sections);
+  const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'26px'}});
+  pbarRow.appendChild(div({style:{flex:'1'}},combinedProgressBar(movements,STATE.sections)));
+  pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'46px',textAlign:'right'}},Math.round(mastery*100)+'%'));
+
+  const content=div({style:{padding:'16px 16px 32px',overflowY:'auto',flex:'1'}},
+    span({className:'label',style:{display:'block',marginBottom:'8px'}},'Overall Progress'),
+    pbarRow,
+    span({className:'label',style:{display:'block',marginBottom:'10px'}},'Movements')
+  );
+  for (const m of movements) {
+    const ms=movMastery(m,STATE.sections);
+    const secs=STATE.sections.filter(s=>s.movementId===m.id);
+    content.appendChild(div({className:'card'},
+      div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'7px'}},
+        span({style:{fontSize:'15px',fontWeight:'bold'}},m.name),
+        span({style:{fontSize:'14px',color:'#6B6B6B'}},Math.round(ms*100)+'%')
+      ),
+      progressBar(m.totalMeasures,secs),
+      div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},m.totalMeasures+' mm \u00b7 \u2669= '+m.targetBpm)
+    ));
+  }
+  return content;
+}
+
+// ─── SCREENS ─────────────────────────────────────────────────────────────────
+function renderWorkScreen() {
+  const {workId,composerName} = NAV;
+  const work=STATE.works.find(w=>w.id===workId);
+  if (!work){navigate({screen:'home'});return div({});}
+
+  const movements=STATE.movements.filter(m=>m.workId===workId).sort((a,b)=>a.orderIndex-b.orderIndex);
+  const isMulti=movements.length>1;
+  let currentTab=0;
+
+  const screen=div({className:'screen'});
+
+  const topbar=div({className:'topbar'},
+    btn({className:'btn-back',onClick:goBack},'\u2039'),
+    div({style:{flex:'1',minWidth:'0'}},
+      div({className:'title'},work.title),
+      div({style:{display:'flex',gap:'8px',alignItems:'center',marginTop:'2px'}},
+        span({style:{fontSize:'13px',color:'#6B6B6B'}},composerName),
+        tagChip(work.tag)
+      )
+    ),
+    btn({className:'btn-icon',onClick:()=>actionSheet([
+      {label:'Edit title / composer',onClick:()=>workDialog({composer:composerName,title:work.title},async(nc,nt)=>{
+        const oldCId=work.composerId, newCId=await getOrCreateComposer(nc);
+        await dbPut('works',{...work,title:nt,composerId:newCId,lastWorked:Date.now()});
+        if(newCId!==oldCId) await pruneComposer(oldCId); reload();
+      })},
+      {label:'Change tag',onClick:()=>tagDialog(work.tag,async tag=>{await dbPut('works',{...work,tag,lastWorked:Date.now()});reload();})},
+      {label:'Add movement',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
+        await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:movements.length});
+        await touchWork(workId);reload();
+      })},
+      {label:'Delete work',danger:true,onClick:async()=>{
+        for(const m of movements){
+          const secs=await dbAll('sections');
+          for(const s of secs.filter(s=>s.movementId===m.id)) await dbDel('sections',s.id);
+          await dbDel('movements',m.id);
+        }
+        const cId=work.composerId; await dbDel('works',work.id); await pruneComposer(cId);
+        navigate({screen:'home'});reload();
+      }}
+    ])},'\u22ef')
+  );
+  screen.appendChild(topbar);
+
+  const contentArea=div({style:{flex:'1',overflow:'hidden',display:'flex',flexDirection:'column'}});
+
+  function setTab(idx) {
+    currentTab=idx;
+    contentArea.innerHTML='';
+    if (movements.length===0) {
+      const empty=div({className:'empty'},
+       para({},'No movements yet.'),
+        btn({className:'btn-primary',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
+          await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:0});
+          await touchWork(workId);reload();
+        })},'Add a movement')
+      );
+      contentArea.appendChild(empty);
+      return;
+    }
+    if (isMulti && idx===0) contentArea.appendChild(summaryTab(work,movements));
+    else {
+      const movIdx = isMulti ? idx-1 : 0;
+      contentArea.appendChild(movementTab(movements[movIdx],workId));
+    }
+    if (isMulti) {
+      // refresh tab active states
+      tabBar.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+    }
+  }
+
+  let tabBar=null;
+  if (isMulti) {
+    tabBar=div({className:'tabs'});
+    const tabNames=['Summary',...movements.map(m=>m.name)];
+    tabNames.forEach((name,i)=>{
+      const t=btn({className:'tab'+(i===0?' active':''),onClick:()=>setTab(i)},name);
+      tabBar.appendChild(t);
+    });
+    screen.appendChild(tabBar);
+  }
+
+  screen.appendChild(contentArea);
+  setTab(0);
+
+  // FAB
+  screen.appendChild(btn({className:'fab',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
+    await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:movements.length});
+    await touchWork(workId);reload();
+  })},'+'));
+
+  return screen;
+}
+
+function renderComposerScreen() {
+  const {composerName}=NAV;
+  const composer=STATE.composers.find(c=>c.name===composerName);
+  const myWorks=STATE.works.filter(w=>w.composerId===composer?.id).sort((a,b)=>a.title.localeCompare(b.title));
+
+  const screen=div({className:'screen'},
+    div({className:'topbar'},
+      btn({className:'btn-back',onClick:()=>navigate({screen:'home'})},'\u2039'),
+      span({style:{fontSize:'19px',flex:'1'}},composerName),
+      btn({className:'btn-plus',onClick:()=>workDialog({composer:composerName,title:''},async(comp,title)=>{
+        const cId=await getOrCreateComposer(comp);
+        await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});reload();
+      })},'+')
+    )
+  );
+
+  const list=div({className:'scroll'});
+  if (!myWorks.length) list.appendChild(div({className:'empty'},para({},'No works yet. Tap + to add one.')));
+  for (const w of myWorks) {
+    const mastery=workMastery(w.id,STATE.movements,STATE.sections);
+    const movCount=STATE.movements.filter(m=>m.workId===w.id).length;
+    const row=div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName})},
+      div({style:{flex:'1'}},
+        div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
+        div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
+          tagChip(w.tag),
+          movCount>0?span({className:'small'},movCount+' movement'+(movCount!==1?'s':'')):null
+        )
+      ),
+      movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},Math.round(mastery*100)+'%'):null
+    );
+    list.appendChild(row);
+  }
+  screen.appendChild(list);
+  return screen;
+}
+
+function renderHomeScreen() {
+  let sortMode='composer', filterTag='All';
+
+  const screen=div({className:'screen'});
+
+  const header=div({style:{padding:'16px 16px 12px',borderBottom:'1px solid #E4E3DE',flexShrink:'0'}});
+
+  function buildHeader() {
+    header.innerHTML='';
+    const top=div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+      span({style:{fontSize:'20px',color:'#2E2E2E'}},'Piano Repertoire'),
+      div({style:{display:'flex',gap:'4px',alignItems:'center'}},
+        btn({className:'btn-icon',style:{fontSize:'18px',marginRight:'2px'},title:'Backup & Restore',onClick:()=>dataModal(reload)},'\u2b06\ufe0e'),
+        ...((['composer','recent']).map(mode=>{
+          const b=btn({className:'pill'+(sortMode===mode?' active':''),onClick:()=>{sortMode=mode;buildList();}},mode==='composer'?'Composer':'Recent');
+          return b;
+        }))
+      )
+    );
+    const chips=div({className:'chips'});
+    for (const tag of ['All',...TAGS]) {
+      const color=TAG_COLOR[tag];
+      const b=btn({className:'pill',onClick:()=>{filterTag=tag;buildList();}},tag);
+      if (filterTag===tag) { b.style.background=color||'#7B9E87'; b.style.color='#fff'; b.style.borderColor=color||'#7B9E87'; }
+      chips.appendChild(b);
+    }
+    header.appendChild(top);
+    header.appendChild(chips);
+  }
+
+  const list=div({className:'scroll'});
+
+  function buildList() {
+    buildHeader();
+    list.innerHTML='';
+    const filtered=filterTag==='All'?STATE.works:STATE.works.filter(w=>w.tag===filterTag);
+    if (!STATE.works.length) {
+      list.appendChild(div({className:'empty'},para({},'No repertoire yet.\nTap + to add your first piece.')));
+      return;
+    }
+    if (sortMode==='composer') {
+      const groups=STATE.composers.slice().sort((a,b)=>a.name.localeCompare(b.name))
+        .map(c=>({composer:c,works:filtered.filter(w=>w.composerId===c.id)}))
+        .filter(g=>g.works.length>0);
+      if (!groups.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
+      for (const {composer,works:cWorks} of groups) {
+        list.appendChild(div({className:'row',onClick:()=>navigate({screen:'composer',composerName:composer.name})},
+          div({},
+            div({style:{fontSize:'16px',color:'#2E2E2E'}},composer.name),
+            div({className:'small',style:{marginTop:'3px'}},cWorks.length+' work'+(cWorks.length!==1?'s':''))
+          )
+        ));
+      }
+    } else {
+      const recent=[...filtered].sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
+      if (!recent.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
+      for (const w of recent) {
+        const comp=STATE.composers.find(c=>c.id===w.composerId);
+        const mastery=workMastery(w.id,STATE.movements,STATE.sections);
+        const movCount=STATE.movements.filter(m=>m.workId===w.id).length;
+        list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||''})},
+          div({style:{flex:'1'}},
+            div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
+            div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
+            div({style:{display:'flex',gap:'8px',marginTop:'6px',alignItems:'center'}},tagChip(w.tag))
+          ),
+          movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},Math.round(mastery*100)+'%'):null
+        ));
+      }
+    }
+  }
+
+  buildList();
+  screen.appendChild(header);
+  screen.appendChild(list);
+  screen.appendChild(btn({className:'fab',onClick:()=>workDialog(null,async(comp,title)=>{
+    const cId=await getOrCreateComposer(comp);
+    await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});reload();
+  })},'+'));
+  return screen;
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function render() {
+  const app=document.getElementById('app');
+  app.innerHTML='';
+  let screen;
+  if      (NAV.screen==='home')     screen=renderHomeScreen();
+  else if (NAV.screen==='composer') screen=renderComposerScreen();
+  else if (NAV.screen==='work')     screen=renderWorkScreen();
+  if (screen) app.appendChild(screen);
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+(async()=>{
+  document.getElementById('app').innerHTML='<div style="height:100dvh;display:flex;align-items:center;justify-content:center;color:#9E9E9E;">Loading\u2026</div>';
+  await reload();
+
+})();
+</script>
+</body>
+</html>
