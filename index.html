@@ -806,13 +806,15 @@ function sectionRow(section, idx, allSections, movement, workId) {
     return {type:'put',store:'works',record:uw};
   }
 
+  const openEdit = () => sectionDialog(movement,allSections,section,async(s,e,g,n)=>{
+    const updated={...section,startMeasure:s,endMeasure:e,grade:g,name:n||''};
+    await dbPut('sections',updated);
+    const wop=await wTouch();
+    applyMutations([{type:'put',store:'sections',record:updated},wop],[workId]);
+  });
+
   const menuItems=[
-    {label:'Edit',onClick:()=>sectionDialog(movement,allSections,section,async(s,e,g,n)=>{
-      const updated={...section,startMeasure:s,endMeasure:e,grade:g,name:n||''};
-      await dbPut('sections',updated);
-      const wop=await wTouch();
-      applyMutations([{type:'put',store:'sections',record:updated},wop],[workId]);
-    })},
+    {label:'Edit',onClick:openEdit},
     ...(canSplit?[{label:'Split',onClick:()=>splitDialog(section,async at=>{
       await dbDel('sections',section.id);
       const id1=await dbPut('sections',{movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade,name:''});
@@ -844,13 +846,13 @@ function sectionRow(section, idx, allSections, movement, workId) {
     }}
   ];
 
-  return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'#EFEEE9',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px'}},
+  return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'#EFEEE9',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px',cursor:'pointer'},onClick:openEdit},
     gradeBadge(section.grade),
     div({style:{flex:'1'}},
       div({style:{fontSize:'14px',fontWeight:'bold',color:'#2E2E2E'}},sectionLabel),
       div({style:{fontSize:'13px',color:'#6B6B6B'}},'mm. '+section.startMeasure+'\u2013'+section.endMeasure)
     ),
-    btn({className:'btn-icon',onClick:()=>actionSheet(menuItems)},'\u22ef')
+    btn({className:'btn-icon',onClick:e=>{e.stopPropagation();actionSheet(menuItems);}},'\u22ef')
   );
 }
 
@@ -915,7 +917,7 @@ function movementTab(movement, workId) {
 }
 
 // ─── SUMMARY TAB ─────────────────────────────────────────────────────────────
-function summaryTab(work, movements) {
+function summaryTab(work, movements, setTab, isMulti) {
   const mastery=workMastery(work.id);
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'26px'}});
   pbarRow.appendChild(div({style:{flex:'1'}},combinedProgressBar(movements,IDX.secsByMov)));
@@ -926,10 +928,11 @@ function summaryTab(work, movements) {
     pbarRow,
     span({className:'label',style:{display:'block',marginBottom:'10px'}},'Movements')
   );
-  for (const m of movements) {
+  for (const [i,m] of movements.entries()) {
     const ms=movMastery(m);
     const secs=(IDX.secsByMov.get(m.id)||[]);
-    content.appendChild(div({className:'card'},
+    const tabIdx = isMulti ? i+1 : 0;
+    content.appendChild(div({className:'card',style:{cursor:'pointer'},onClick:()=>setTab(tabIdx)},
       div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'7px'}},
         span({style:{fontSize:'15px',fontWeight:'bold'}},m.name),
         span({style:{fontSize:'14px',color:'#6B6B6B'}},pct(ms))
@@ -1026,7 +1029,7 @@ function renderWorkScreen() {
       ));
       return;
     }
-    if (isMulti && idx===0) contentArea.appendChild(summaryTab(work,movements));
+    if (isMulti && idx===0) contentArea.appendChild(summaryTab(work,movements,setTab,isMulti));
     else {
       const movIdx=isMulti?idx-1:0;
       contentArea.appendChild(movementTab(movements[movIdx],workId));
