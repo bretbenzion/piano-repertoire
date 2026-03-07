@@ -134,33 +134,164 @@ async function loadAll() {
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const pct = v => (v*100).toFixed(1)+'%';
 
-function movMastery(mov, sections) {
+// ─── INDEXED STATE ────────────────────────────────────────────────────────────
+// Built once after loadAll(); updated in-place by mutate(). Never re-scanned.
+// composerById : Map<id, composer>
+// workById     : Map<id, work>
+// movById      : Map<id, movement>
+// secById      : Map<id, section>
+// movsByWork   : Map<workId, movement[]>   — sorted by orderIndex
+// secsByMov    : Map<movId,  section[]>    — unsorted (sorted on demand)
+// MASTERY      : Map<workId, float>        — cached, equal-weight per movement
+let IDX = {};
+
+function buildIndex(raw) {
+  const composerById = new Map(raw.composers.map(c=>[c.id,c]));
+  const workById     = new Map(raw.works.map(w=>[w.id,w]));
+  const movById      = new Map(raw.movements.map(m=>[m.id,m]));
+  const secById      = new Map(raw.sections.map(s=>[s.id,s]));
+
+  const movsByWork = new Map();
+  for (const m of raw.movements) {
+    if (!movsByWork.has(m.workId)) movsByWork.set(m.workId,[]);
+    movsByWork.get(m.workId).push(m);
+  }
+  for (const [,arr] of movsByWork) arr.sort((a,b)=>a.orderIndex-b.orderIndex);
+
+  const secsByMov = new Map();
+  for (const s of raw.sections) {
+    if (!secsByMov.has(s.movementId)) secsByMov.set(s.movementId,[]);
+    secsByMov.get(s.movementId).push(s);
+  }
+
+  IDX = {composerById,workById,movById,secById,movsByWork,secsByMov};
+
+  // Build mastery cache for all works
+  const MASTERY = new Map();
+  for (const w of raw.works) MASTERY.set(w.id, _calcWorkMastery(w.id));
+  IDX.MASTERY = MASTERY;
+}
+
+function _calcMovMastery(mov) {
   const total = mov.totalMeasures||0; if (!total) return 0;
-  const mine = sections.filter(s=>s.movementId===mov.id);
-  return mine.reduce((sum,s) => {
+  const secs  = IDX.secsByMov.get(mov.id)||[];
+  return secs.reduce((sum,s)=>{
     const n = Math.max(0,Math.min(s.endMeasure,total)-s.startMeasure+1);
     return sum + n*(GRADE_MASTERY[s.grade]||0);
   },0) / total;
 }
+function _calcWorkMastery(workId) {
+  const movs = IDX.movsByWork.get(workId)||[];
+  if (!movs.length) return 0;
+  return movs.reduce((s,m)=>s+_calcMovMastery(m),0) / movs.length;
+}
+// Public accessors — always O(1) after index build
+function movMastery(mov)    { return _calcMovMastery(mov); }
+function workMastery(workId){ return IDX.MASTERY.get(workId)??0; }
+function recomputeMastery(workId) { IDX.MASTERY.set(workId,_calcWorkMastery(workId)); }
 
-// Equal weighting per movement (not by measures)
-function workMastery(workId,movements,sections) {
-  const mine = movements.filter(m=>m.workId===workId);
-  if (!mine.length) return 0;
-  return mine.reduce((s,m)=>s+movMastery(m,sections),0) / mine.length;
+// ─── PARTIAL STATE MUTATION ───────────────────────────────────────────────────
+// Call instead of reload() after any DB write. Updates STATE + IDX in-place,
+// then re-renders. No full DB round-trip; only the caller's awaited dbPut/dbDel
+// results are needed.
+//
+// ops is an array of {type:'put'|'del', store, record?, id?}
+// After applying ops, pass affectedWorkId to recompute mastery for that work only.
+function applyMutations(ops, affectedWorkIds=[]) {
+  for (const op of ops) {
+    if (op.type==='put') {
+      const rec = op.record;
+      if (op.store==='composers') {
+        IDX.composerById.set(rec.id,rec);
+        const i=STATE.composers.findIndex(c=>c.id===rec.id);
+        if (i>=0) STATE.composers[i]=rec; else STATE.composers.push(rec);
+      } else if (op.store==='works') {
+        IDX.workById.set(rec.id,rec);
+        const i=STATE.works.findIndex(w=>w.id===rec.id);
+        if (i>=0) STATE.works[i]=rec; else STATE.works.push(rec);
+      } else if (op.store==='movements') {
+        const old=IDX.movById.get(rec.id);
+        IDX.movById.set(rec.id,rec);
+        const i=STATE.movements.findIndex(m=>m.id===rec.id);
+        if (i>=0) STATE.movements[i]=rec; else STATE.movements.push(rec);
+        // Update movsByWork: remove from old bucket if workId changed
+        if (old && old.workId!==rec.workId) {
+          const oldArr=IDX.movsByWork.get(old.workId)||[];
+          const oi=oldArr.findIndex(m=>m.id===rec.id);
+          if (oi>=0) oldArr.splice(oi,1);
+        }
+        if (!IDX.movsByWork.has(rec.workId)) IDX.movsByWork.set(rec.workId,[]);
+        const arr=IDX.movsByWork.get(rec.workId);
+        const ai=arr.findIndex(m=>m.id===rec.id);
+        if (ai>=0) arr[ai]=rec; else arr.push(rec);
+        arr.sort((a,b)=>a.orderIndex-b.orderIndex);
+      } else if (op.store==='sections') {
+        const old=IDX.secById.get(rec.id);
+        IDX.secById.set(rec.id,rec);
+        const i=STATE.sections.findIndex(s=>s.id===rec.id);
+        if (i>=0) STATE.sections[i]=rec; else STATE.sections.push(rec);
+        if (old && old.movementId!==rec.movementId) {
+          const oldArr=IDX.secsByMov.get(old.movementId)||[];
+          const oi=oldArr.findIndex(s=>s.id===rec.id);
+          if (oi>=0) oldArr.splice(oi,1);
+        }
+        if (!IDX.secsByMov.has(rec.movementId)) IDX.secsByMov.set(rec.movementId,[]);
+        const arr=IDX.secsByMov.get(rec.movementId);
+        const ai=arr.findIndex(s=>s.id===rec.id);
+        if (ai>=0) arr[ai]=rec; else arr.push(rec);
+      }
+    } else if (op.type==='del') {
+      if (op.store==='composers') {
+        IDX.composerById.delete(op.id);
+        STATE.composers=STATE.composers.filter(c=>c.id!==op.id);
+      } else if (op.store==='works') {
+        IDX.workById.delete(op.id);
+        IDX.MASTERY.delete(op.id);
+        STATE.works=STATE.works.filter(w=>w.id!==op.id);
+      } else if (op.store==='movements') {
+        const old=IDX.movById.get(op.id);
+        IDX.movById.delete(op.id);
+        STATE.movements=STATE.movements.filter(m=>m.id!==op.id);
+        if (old) {
+          const arr=IDX.movsByWork.get(old.workId)||[];
+          const i=arr.findIndex(m=>m.id===op.id);
+          if (i>=0) arr.splice(i,1);
+        }
+      } else if (op.store==='sections') {
+        const old=IDX.secById.get(op.id);
+        IDX.secById.delete(op.id);
+        STATE.sections=STATE.sections.filter(s=>s.id!==op.id);
+        if (old) {
+          const arr=IDX.secsByMov.get(old.movementId)||[];
+          const i=arr.findIndex(s=>s.id===op.id);
+          if (i>=0) arr.splice(i,1);
+        }
+      }
+    }
+  }
+  const wids = new Set(affectedWorkIds);
+  for (const wid of wids) recomputeMastery(wid);
+  render();
 }
 
+// ─── CONVENIENCE HELPERS ──────────────────────────────────────────────────────
 async function touchWork(workId) {
-  const ws = await dbAll('works'), w = ws.find(x=>x.id===workId);
-  if (w) await dbPut('works',{...w,lastWorked:Date.now()});
+  const w = IDX.workById.get(workId); if (!w) return;
+  const updated = {...w, lastWorked:Date.now()};
+  await dbPut('works', updated);
+  applyMutations([{type:'put',store:'works',record:updated}]);
 }
 async function pruneComposer(cId) {
-  const ws = await dbAll('works');
-  if (!ws.some(w=>w.composerId===cId)) await dbDel('composers',cId);
+  if (!STATE.works.some(w=>w.composerId===cId)) await dbDel('composers',cId);
+  if (!STATE.works.some(w=>w.composerId===cId))
+    applyMutations([{type:'del',store:'composers',id:cId}]);
 }
 async function getOrCreateComposer(name) {
-  const all = await dbAll('composers'), ex = all.find(c=>c.name===name);
-  return ex ? ex.id : await dbPut('composers',{name});
+  const ex = STATE.composers.find(c=>c.name===name);
+  if (ex) return ex.id;
+  const id = await dbPut('composers',{name});
+  applyMutations([{type:'put',store:'composers',record:{id,name}}]);
+  return id;
 }
 
 // ─── EXPORT / IMPORT ─────────────────────────────────────────────────────────
@@ -246,15 +377,16 @@ function progressBar(totalMeasures, sections) {
   for (const s of segs) bar.appendChild(div({style:{flex:s.n,background:s.color,height:'100%'}}));
   return bar;
 }
-function combinedProgressBar(movements, sections) {
+function combinedProgressBar(movements, secsByMov) {
   const bar = div({className:'pbar'});
   const total=movements.reduce((s,m)=>s+(m.totalMeasures||0),0);
   if (!total){bar.style.background='#CCCCC8';return bar;}
   for (const m of movements) {
     const t=m.totalMeasures||0; if(!t) continue;
-    const ms=sections.filter(s=>s.movementId===m.id).sort((a,b)=>a.startMeasure-b.startMeasure);
+    const ms=(secsByMov.get?secsByMov.get(m.id):secsByMov.filter(s=>s.movementId===m.id)||[]);
+    const sorted=[...(ms||[])].sort((a,b)=>a.startMeasure-b.startMeasure);
     let cur=1;
-    for (const s of ms) {
+    for (const s of sorted) {
       if(s.startMeasure>cur) bar.appendChild(div({style:{flex:s.startMeasure-cur,background:'#CCCCC8',height:'100%'}}));
       bar.appendChild(div({style:{flex:s.endMeasure-s.startMeasure+1,background:GRADE_COLOR[s.grade],height:'100%'}}));
       cur=s.endMeasure+1;
@@ -349,12 +481,24 @@ function workDialog(initial, onSave) {
 }
 
 function movementDialog(initial, onSave, onDelete) {
-  let name=initial?.name||'', measures=initial?.totalMeasures?.toString()||'', bpm=initial?.targetBpm?.toString()||'';
+  let name=initial?.name||'', measures=initial?.totalMeasures?.toString()||'', bpm=initial?.targetBpm?.toString()||'', notes=initial?.notes||'';
   const fName = fieldEl('Movement name', name,    v=>name=v,    {autoFocus:true});
   const fMeas = fieldEl('Total measures',measures, v=>measures=v,{type:'number',flex:true});
   const fBpm  = fieldEl('Target BPM',   bpm,      v=>bpm=v,    {type:'number',flex:true});
+  // Notes textarea
+  const ta = el('textarea',{placeholder:'Fingering tips, teacher feedback, edition notes…',rows:'4',
+    style:{fontSize:'14px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',background:'#fff',
+      color:'#2E2E2E',outline:'none',width:'100%',resize:'vertical',lineHeight:'1.5',fontFamily:'inherit'}});
+  ta.value = notes;
+  ta.addEventListener('input',()=>notes=ta.value);
+  ta.addEventListener('focus',()=>ta.style.borderColor='#7B9E87');
+  ta.addEventListener('blur', ()=>ta.style.borderColor='#E4E3DE');
+  const fNotes = div({className:'field'},
+    el('label',{},'Notes (optional)'),
+    ta
+  );
   const err   = span({className:'err',style:{display:'none'}});
-  const body  = div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fName, div({className:'row-fields'}, fMeas, fBpm), err);
+  const body  = div({style:{display:'flex',flexDirection:'column',gap:'14px'}}, fName, div({className:'row-fields'}, fMeas, fBpm), fNotes, err);
   if (initial && onDelete) {
     body.appendChild(btn({className:'btn', style:{color:'#BB5050',borderTop:'1px solid #E4E3DE',paddingTop:'12px',marginTop:'4px'},
       onClick:()=>{ m.remove(); onDelete(); }}, 'Delete this movement'));
@@ -365,7 +509,7 @@ function movementDialog(initial, onSave, onDelete) {
       const mv=parseInt(measures), bv=parseInt(bpm);
       if(!name.trim()||isNaN(mv)||isNaN(bv)){err.textContent='Fill in all fields';err.style.display='';return;}
       if(mv<=0||bv<=0){err.textContent='Values must be > 0';err.style.display='';return;}
-      m.remove(); onSave(name.trim(),mv,bv);
+      m.remove(); onSave(name.trim(),mv,bv,notes.trim());
     }}, initial?'Save':'Add')
   );
   const m = modal(initial?'Edit Movement':'Add Movement', body, foot, ()=>m.remove());
@@ -500,34 +644,37 @@ function convertToMovementDialog(sourceWork, sourceComposerName) {
     btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
     btn({className:'btn-primary',onClick:async()=>{
       if(!movName.trim()) return;
-      const targetWork = STATE.works.find(w=>w.id===targetWorkId);
+      const targetWork = IDX.workById.get(targetWorkId);
       if(!targetWork) return;
-      // Get existing movements of target to set orderIndex
-      const targetMovs = STATE.movements.filter(mv=>mv.workId===targetWorkId);
+      const targetMovs = IDX.movsByWork.get(targetWorkId)||[];
       const orderIndex = targetMovs.length;
-      // Get source movements and sections
-      const sourceMov = STATE.movements.filter(mv=>mv.workId===sourceWork.id);
-      // If source has exactly one movement, absorb it; else use totalMeasures=0 as container
+      const sourceMov = IDX.movsByWork.get(sourceWork.id)||[];
+      const ops=[];
       if (sourceMov.length===1) {
         const sm = sourceMov[0];
-        const newMovId = await dbPut('movements',{workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,orderIndex});
-        // Move sections
-        const secs = STATE.sections.filter(s=>s.movementId===sm.id);
-        for (const s of secs) await dbPut('sections',{...s,movementId:newMovId});
-        await dbDel('movements',sm.id);
+        const newMovId = await dbPut('movements',{workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,notes:sm.notes||'',orderIndex});
+        const newMovRec={id:newMovId,workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,notes:sm.notes||'',orderIndex};
+        ops.push({type:'put',store:'movements',record:newMovRec});
+        const secs = IDX.secsByMov.get(sm.id)||[];
+        for (const s of secs) {await dbPut('sections',{...s,movementId:newMovId});ops.push({type:'put',store:'sections',record:{...s,movementId:newMovId}});}
+        await dbDel('movements',sm.id);ops.push({type:'del',store:'movements',id:sm.id});
       } else {
-        // Multi-movement source: create a container movement, sections stay per-movement so just re-parent movements
-        for (const sm of sourceMov) {
-          await dbPut('movements',{...sm,workId:targetWorkId,orderIndex:targetMovs.length+sourceMov.indexOf(sm)});
+        for (let i=0;i<sourceMov.length;i++) {
+          const sm=sourceMov[i];
+          const updated={...sm,workId:targetWorkId,orderIndex:targetMovs.length+i};
+          await dbPut('movements',updated);ops.push({type:'put',store:'movements',record:updated});
         }
       }
-      // Delete source work (and composer if orphaned)
       const cId = sourceWork.composerId;
-      await dbDel('works',sourceWork.id);
-      await pruneComposer(cId);
+      await dbDel('works',sourceWork.id);ops.push({type:'del',store:'works',id:sourceWork.id});
+      if(!STATE.works.some(w=>w.id!==sourceWork.id&&w.composerId===cId)){
+        await dbDel('composers',cId);ops.push({type:'del',store:'composers',id:cId});
+      }
+      const uw={...targetWork,lastWorked:Date.now()};
+      await dbPut('works',uw);ops.push({type:'put',store:'works',record:uw});
       m.remove();
-      navigate({screen:'work',workId:targetWorkId,composerName:STATE.composers.find(c=>c.id===targetWork.composerId)?.name||''});
-      reload();
+      applyMutations(ops,[targetWorkId]);
+      navigate({screen:'work',workId:targetWorkId,composerName:IDX.composerById.get(targetWork.composerId)?.name||''});
     }},'Convert')
   );
   const m = modal('Convert to Movement', body, foot, ()=>m.remove());
@@ -554,13 +701,18 @@ function extractToWorkDialog(movement, currentWorkId) {
       if(!newTitle.trim()||!newComposer.trim()) return;
       const composerId = await getOrCreateComposer(newComposer.trim());
       const newWorkId  = await dbPut('works',{composerId,title:newTitle.trim(),tag:currentWork?.tag||'Current',lastWorked:Date.now()});
-      // Re-parent movement
-      await dbPut('movements',{...movement,workId:newWorkId,orderIndex:0});
-      // Sections stay — they reference movementId which hasn't changed
-      await touchWork(currentWorkId);
+      const newWorkRec = {id:newWorkId,composerId,title:newTitle.trim(),tag:currentWork?.tag||'Current',lastWorked:Date.now()};
+      const updatedMov = {...movement,workId:newWorkId,orderIndex:0};
+      await dbPut('movements',updatedMov);
+      const uw={...currentWork,lastWorked:Date.now()};
+      await dbPut('works',uw);
       m.remove();
+      applyMutations([
+        {type:'put',store:'works',record:newWorkRec},
+        {type:'put',store:'movements',record:updatedMov},
+        {type:'put',store:'works',record:uw}
+      ],[newWorkId,currentWork.id]);
       navigate({screen:'work',workId:newWorkId,composerName:newComposer.trim()});
-      reload();
     }},'Extract')
   );
   const m = modal('Extract to Work', body, foot, ()=>m.remove());
@@ -624,7 +776,12 @@ function dataModal(onReload) {
 // ─── APP STATE ────────────────────────────────────────────────────────────────
 let STATE = {composers:[],works:[],movements:[],sections:[]};
 let NAV   = {screen:'home'};
-async function reload() { STATE = await loadAll(); render(); }
+async function reload() {
+  const raw = await loadAll();
+  STATE = raw;
+  buildIndex(raw);
+  render();
+}
 function navigate(nav) { NAV=nav; render(); }
 function goBack() {
   if (NAV.screen==='work') navigate({screen:'composer',composerName:NAV.composerName});
@@ -642,24 +799,49 @@ function sectionRow(section, idx, allSections, movement, workId) {
   const canMergeNext=next&&next.startMeasure===section.endMeasure+1;
   const sectionLabel = section.name || ('Section '+(idx+1));
 
+  async function wTouch() {
+    const w=IDX.workById.get(workId);
+    const uw={...w,lastWorked:Date.now()};
+    await dbPut('works',uw);
+    return {type:'put',store:'works',record:uw};
+  }
+
   const menuItems=[
     {label:'Edit',onClick:()=>sectionDialog(movement,allSections,section,async(s,e,g,n)=>{
-      await dbPut('sections',{...section,startMeasure:s,endMeasure:e,grade:g,name:n||''});
-      await touchWork(workId); reload();
+      const updated={...section,startMeasure:s,endMeasure:e,grade:g,name:n||''};
+      await dbPut('sections',updated);
+      const wop=await wTouch();
+      applyMutations([{type:'put',store:'sections',record:updated},wop],[workId]);
     })},
     ...(canSplit?[{label:'Split',onClick:()=>splitDialog(section,async at=>{
       await dbDel('sections',section.id);
-      await dbPut('sections',{movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade,name:''});
-      await dbPut('sections',{movementId:section.movementId,startMeasure:at+1,endMeasure:section.endMeasure,grade:section.grade,name:''});
-      await touchWork(workId); reload();
+      const id1=await dbPut('sections',{movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade,name:''});
+      const id2=await dbPut('sections',{movementId:section.movementId,startMeasure:at+1,endMeasure:section.endMeasure,grade:section.grade,name:''});
+      const wop=await wTouch();
+      applyMutations([
+        {type:'del',store:'sections',id:section.id},
+        {type:'put',store:'sections',record:{id:id1,movementId:section.movementId,startMeasure:section.startMeasure,endMeasure:at,grade:section.grade,name:''}},
+        {type:'put',store:'sections',record:{id:id2,movementId:section.movementId,startMeasure:at+1,endMeasure:section.endMeasure,grade:section.grade,name:''}},
+        wop
+      ],[workId]);
     })}]:[]),
     ...((canMergePrev||canMergeNext)?[{label:'Merge with adjacent',onClick:()=>mergeDialog(section,canMergePrev?prev:null,canMergeNext?next:null,async(other,grade)=>{
       const s=Math.min(section.startMeasure,other.startMeasure),e=Math.max(section.endMeasure,other.endMeasure);
       await dbDel('sections',section.id); await dbDel('sections',other.id);
-      await dbPut('sections',{movementId:section.movementId,startMeasure:s,endMeasure:e,grade,name:''});
-      await touchWork(workId); reload();
+      const id=await dbPut('sections',{movementId:section.movementId,startMeasure:s,endMeasure:e,grade,name:''});
+      const wop=await wTouch();
+      applyMutations([
+        {type:'del',store:'sections',id:section.id},
+        {type:'del',store:'sections',id:other.id},
+        {type:'put',store:'sections',record:{id,movementId:section.movementId,startMeasure:s,endMeasure:e,grade,name:''}},
+        wop
+      ],[workId]);
     })}]:[]),
-    {label:'Delete section',danger:true,onClick:async()=>{await dbDel('sections',section.id);await touchWork(workId);reload();}}
+    {label:'Delete section',danger:true,onClick:async()=>{
+      await dbDel('sections',section.id);
+      const wop=await wTouch();
+      applyMutations([{type:'del',store:'sections',id:section.id},wop],[workId]);
+    }}
   ];
 
   return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'#EFEEE9',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px'}},
@@ -674,21 +856,32 @@ function sectionRow(section, idx, allSections, movement, workId) {
 
 // ─── MOVEMENT TAB ─────────────────────────────────────────────────────────────
 function movementTab(movement, workId) {
-  const mySections=STATE.sections.filter(s=>s.movementId===movement.id).sort((a,b)=>a.startMeasure-b.startMeasure);
-  const mastery=movMastery(movement,STATE.sections);
-  const siblingsCount=STATE.movements.filter(m=>m.workId===workId).length;
+  const mySections=(IDX.secsByMov.get(movement.id)||[]).slice().sort((a,b)=>a.startMeasure-b.startMeasure);
+  const mastery=movMastery(movement);
+  const siblingsCount=(IDX.movsByWork.get(workId)||[]).length;
 
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'22px'}});
   pbarRow.appendChild(div({style:{flex:'1'}},progressBar(movement.totalMeasures,mySections)));
   pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'52px',textAlign:'right'}},pct(mastery)));
 
   const editBtn=btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
-    onClick:()=>movementDialog(movement,async(name,totalMeasures,targetBpm)=>{
-      await dbPut('movements',{...movement,name,totalMeasures,targetBpm});await touchWork(workId);reload();
+    onClick:()=>movementDialog(movement,async(name,totalMeasures,targetBpm,notes)=>{
+      const updated={...movement,name,totalMeasures,targetBpm,notes};
+      await dbPut('movements',updated);
+      const w=IDX.workById.get(workId);
+      const uw={...w,lastWorked:Date.now()};
+      await dbPut('works',uw);
+      applyMutations([{type:'put',store:'movements',record:updated},{type:'put',store:'works',record:uw}],[workId]);
     },async()=>{
-      const secs=await dbAll('sections');
-      for(const s of secs.filter(s=>s.movementId===movement.id)) await dbDel('sections',s.id);
-      await dbDel('movements',movement.id);await touchWork(workId);reload();
+      const secs=IDX.secsByMov.get(movement.id)||[];
+      const ops=[{type:'del',store:'movements',id:movement.id}];
+      for(const s of secs){await dbDel('sections',s.id);ops.push({type:'del',store:'sections',id:s.id});}
+      await dbDel('movements',movement.id);
+      const w=IDX.workById.get(workId);
+      const uw={...w,lastWorked:Date.now()};
+      await dbPut('works',uw);
+      ops.push({type:'put',store:'works',record:uw});
+      applyMutations(ops,[workId]);
     })},'Edit');
   const extractBtn=siblingsCount>1?btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
     onClick:()=>extractToWorkDialog(movement,workId)},'\u2197 Extract'):null;
@@ -698,17 +891,22 @@ function movementTab(movement, workId) {
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'14px'}},
       div({},
         div({style:{fontSize:'19px',fontWeight:'bold',color:'#2E2E2E'}},movement.name),
-        div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},movement.totalMeasures+' measures \u00b7 \u2669= '+movement.targetBpm)
+        div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},movement.totalMeasures+' measures \u00b7 BPM = '+movement.targetBpm)
       ),
       headerBtns
     ),
     pbarRow,
+    movement.notes ? div({style:{background:'#EFEEE9',borderRadius:'9px',padding:'11px 13px',marginBottom:'18px',fontSize:'14px',color:'#4A4A4A',lineHeight:'1.6',whiteSpace:'pre-wrap'}},movement.notes) : null,
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
       span({className:'label'},'Sections'),
       btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px'},
         onClick:()=>sectionDialog(movement,mySections,null,async(s,e,grade,name)=>{
-          await dbPut('sections',{movementId:movement.id,startMeasure:s,endMeasure:e,grade,name:name||''});
-          await touchWork(workId);reload();
+          const id=await dbPut('sections',{movementId:movement.id,startMeasure:s,endMeasure:e,grade,name:name||''});
+          const rec={id,movementId:movement.id,startMeasure:s,endMeasure:e,grade,name:name||''};
+          const w=IDX.workById.get(workId);
+          const uw={...w,lastWorked:Date.now()};
+          await dbPut('works',uw);
+          applyMutations([{type:'put',store:'sections',record:rec},{type:'put',store:'works',record:uw}],[workId]);
         })},'+ Add')
     ),
     mySections.length===0 ? para({style:{fontSize:'14px',color:'#9E9E9E'}},'No sections yet. Add one to track your progress.') : null,
@@ -718,9 +916,9 @@ function movementTab(movement, workId) {
 
 // ─── SUMMARY TAB ─────────────────────────────────────────────────────────────
 function summaryTab(work, movements) {
-  const mastery=workMastery(work.id,movements,STATE.sections);
+  const mastery=workMastery(work.id);
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'26px'}});
-  pbarRow.appendChild(div({style:{flex:'1'}},combinedProgressBar(movements,STATE.sections)));
+  pbarRow.appendChild(div({style:{flex:'1'}},combinedProgressBar(movements,IDX.secsByMov)));
   pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'52px',textAlign:'right'}},pct(mastery)));
 
   const content=div({style:{padding:'16px 16px 32px',overflowY:'auto',flex:'1'}},
@@ -729,15 +927,15 @@ function summaryTab(work, movements) {
     span({className:'label',style:{display:'block',marginBottom:'10px'}},'Movements')
   );
   for (const m of movements) {
-    const ms=movMastery(m,STATE.sections);
-    const secs=STATE.sections.filter(s=>s.movementId===m.id);
+    const ms=movMastery(m);
+    const secs=(IDX.secsByMov.get(m.id)||[]);
     content.appendChild(div({className:'card'},
       div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'7px'}},
         span({style:{fontSize:'15px',fontWeight:'bold'}},m.name),
         span({style:{fontSize:'14px',color:'#6B6B6B'}},pct(ms))
       ),
       progressBar(m.totalMeasures,secs),
-      div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},m.totalMeasures+' mm \u00b7 \u2669= '+m.targetBpm)
+      div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm)
     ));
   }
   return content;
@@ -746,10 +944,10 @@ function summaryTab(work, movements) {
 // ─── WORK SCREEN ─────────────────────────────────────────────────────────────
 function renderWorkScreen() {
   const {workId,composerName} = NAV;
-  const work=STATE.works.find(w=>w.id===workId);
+  const work=IDX.workById.get(workId);
   if (!work){navigate({screen:'home'});return div({});}
 
-  const movements=STATE.movements.filter(m=>m.workId===workId).sort((a,b)=>a.orderIndex-b.orderIndex);
+  const movements=IDX.movsByWork.get(workId)||[];
   const isMulti=movements.length>1;
   let currentTab=0;
   const screen=div({className:'screen'});
@@ -765,24 +963,44 @@ function renderWorkScreen() {
     ),
     btn({className:'btn-icon',onClick:()=>actionSheet([
       {label:'Edit title / composer',onClick:()=>workDialog({composer:composerName,title:work.title},async(nc,nt)=>{
-        const oldCId=work.composerId, newCId=await getOrCreateComposer(nc);
-        await dbPut('works',{...work,title:nt,composerId:newCId,lastWorked:Date.now()});
-        if(newCId!==oldCId) await pruneComposer(oldCId); reload();
+        const oldCId=work.composerId;
+        const newCId=await getOrCreateComposer(nc);
+        const updated={...work,title:nt,composerId:newCId,lastWorked:Date.now()};
+        await dbPut('works',updated);
+        const ops=[{type:'put',store:'works',record:updated}];
+        if(newCId!==oldCId&&!STATE.works.some(w=>w.id!==work.id&&w.composerId===oldCId)){
+          await dbDel('composers',oldCId);
+          ops.push({type:'del',store:'composers',id:oldCId});
+        }
+        applyMutations(ops);render();
       })},
-      {label:'Change tag',onClick:()=>tagDialog(work.tag,async tag=>{await dbPut('works',{...work,tag,lastWorked:Date.now()});reload();})},
-      {label:'Add movement',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
-        await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:movements.length});
-        await touchWork(workId);reload();
+      {label:'Change tag',onClick:()=>tagDialog(work.tag,async tag=>{
+        const updated={...work,tag,lastWorked:Date.now()};
+        await dbPut('works',updated);
+        applyMutations([{type:'put',store:'works',record:updated}]);
+      })},
+      {label:'Add movement',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
+        const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length});
+        const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length};
+        const uw={...work,lastWorked:Date.now()};
+        await dbPut('works',uw);
+        applyMutations([{type:'put',store:'movements',record:rec},{type:'put',store:'works',record:uw}],[workId]);
       })},
       {label:'Convert work to movement\u2026',onClick:()=>convertToMovementDialog(work,composerName)},
       {label:'Delete work',danger:true,onClick:async()=>{
+        const ops=[];
         for(const m of movements){
-          const secs=await dbAll('sections');
-          for(const s of secs.filter(s=>s.movementId===m.id)) await dbDel('sections',s.id);
-          await dbDel('movements',m.id);
+          const secs=IDX.secsByMov.get(m.id)||[];
+          for(const s of secs){await dbDel('sections',s.id);ops.push({type:'del',store:'sections',id:s.id});}
+          await dbDel('movements',m.id);ops.push({type:'del',store:'movements',id:m.id});
         }
-        const cId=work.composerId; await dbDel('works',work.id); await pruneComposer(cId);
-        navigate({screen:'home'});reload();
+        const cId=work.composerId;
+        await dbDel('works',work.id);ops.push({type:'del',store:'works',id:work.id});
+        if(!STATE.works.some(w=>w.id!==work.id&&w.composerId===cId)){
+          await dbDel('composers',cId);ops.push({type:'del',store:'composers',id:cId});
+        }
+        applyMutations(ops);
+        navigate({screen:'home'});
       }}
     ])},'\u22ef')
   );
@@ -797,9 +1015,12 @@ function renderWorkScreen() {
     if (movements.length===0) {
       contentArea.appendChild(div({className:'empty'},
         para({},'No movements yet.'),
-        btn({className:'btn-primary',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
-          await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:0});
-          await touchWork(workId);reload();
+        btn({className:'btn-primary',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
+          const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:0});
+          const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:0};
+          const uw={...work,lastWorked:Date.now()};
+          await dbPut('works',uw);
+          applyMutations([{type:'put',store:'movements',record:rec},{type:'put',store:'works',record:uw}],[workId]);
         })},'Add a movement')
       ));
       return;
@@ -807,11 +1028,7 @@ function renderWorkScreen() {
     if (isMulti && idx===0) contentArea.appendChild(summaryTab(work,movements));
     else {
       const movIdx=isMulti?idx-1:0;
-      const mov=movements[movIdx];
-      // Add extract option in movement header via re-render: inject extract button
-      const tabContent=movementTab(mov,workId);
-      // Find the edit btn area and append extract button
-      contentArea.appendChild(tabContent);
+      contentArea.appendChild(movementTab(movements[movIdx],workId));
     }
     if (tabBar) tabBar.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
   }
@@ -824,26 +1041,15 @@ function renderWorkScreen() {
     screen.appendChild(tabBar);
   }
 
-  // Add "Extract to work" to movement action in movement tab via movement edit action sheet
-  // We override movementDialog's delete area to also show extract option per movement
-  // Instead, inject extract into the movement ⋯ menu by patching movementTab render:
-  // (handled via work ⋯ menu per-movement listing)
-
   screen.appendChild(contentArea);
   setTab(0);
 
-  // Per-movement extract is accessed via movement Edit dialog — add it there
-  // We add a separate "Extract movement to work" entry in the work action sheet when isMulti
-  if (isMulti) {
-    // We already have "Convert work to movement" in the work menu.
-    // Extract is accessed per movement via long-press / movement edit.
-    // For simplicity, each movement tab shows an "Extract" button next to Edit.
-    // Re-patch: we wrap movementTab to add extract button.
-  }
-
-  screen.appendChild(btn({className:'fab',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm)=>{
-    await dbPut('movements',{workId,name,totalMeasures,targetBpm,orderIndex:movements.length});
-    await touchWork(workId);reload();
+  screen.appendChild(btn({className:'fab',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
+    const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length});
+    const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length};
+    const uw={...work,lastWorked:Date.now()};
+    await dbPut('works',uw);
+    applyMutations([{type:'put',store:'movements',record:rec},{type:'put',store:'works',record:uw}],[workId]);
   })},'+'));
 
   return screen;
@@ -860,15 +1066,16 @@ function renderComposerScreen() {
       span({style:{fontSize:'19px',flex:'1'}},composerName),
       btn({className:'btn-plus',onClick:()=>workDialog({composer:composerName,title:''},async(comp,title)=>{
         const cId=await getOrCreateComposer(comp);
-        await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});reload();
+        const id=await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});
+        applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Current',lastWorked:Date.now()}}],[id]);
       })},'+')
     )
   );
   const list=div({className:'scroll'});
   if (!myWorks.length) list.appendChild(div({className:'empty'},para({},'No works yet. Tap + to add one.')));
   for (const w of myWorks) {
-    const mastery=workMastery(w.id,STATE.movements,STATE.sections);
-    const movCount=STATE.movements.filter(m=>m.workId===w.id).length;
+    const mastery=workMastery(w.id);
+    const movCount=(IDX.movsByWork.get(w.id)||[]).length;
     list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName})},
       div({style:{flex:'1'}},
         div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
@@ -937,9 +1144,9 @@ function renderHomeScreen() {
       const recent=[...filtered].sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
       if (!recent.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
       for (const w of recent) {
-        const comp=STATE.composers.find(c=>c.id===w.composerId);
-        const mastery=workMastery(w.id,STATE.movements,STATE.sections);
-        const movCount=STATE.movements.filter(m=>m.workId===w.id).length;
+        const comp=IDX.composerById.get(w.composerId);
+        const mastery=workMastery(w.id);
+        const movCount=(IDX.movsByWork.get(w.id)||[]).length;
         list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||''})},
           div({style:{flex:'1'}},
             div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
@@ -957,7 +1164,8 @@ function renderHomeScreen() {
   screen.appendChild(list);
   screen.appendChild(btn({className:'fab',onClick:()=>workDialog(null,async(comp,title)=>{
     const cId=await getOrCreateComposer(comp);
-    await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});reload();
+    const id=await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});
+    applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Current',lastWorked:Date.now()}}],[id]);
   })},'+'));
   return screen;
 }
