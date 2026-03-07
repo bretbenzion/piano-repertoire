@@ -1037,13 +1037,13 @@ function renderWorkScreen() {
   if (isMulti) {
     tabBar=div({className:'tabs'});
     ['Summary',...movements.map(m=>m.name)].forEach((name,i)=>{
-      tabBar.appendChild(btn({className:'tab'+(i===0?' active':''),onClick:()=>setTab(i)},name));
+      tabBar.appendChild(btn({className:'tab'+(i===currentTab?' active':''),onClick:()=>setTab(i)},name));
     });
     screen.appendChild(tabBar);
   }
 
   screen.appendChild(contentArea);
-  setTab(0);
+  setTab(currentTab);
 
   screen.appendChild(btn({className:'fab',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
     const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length});
