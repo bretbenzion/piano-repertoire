@@ -782,7 +782,7 @@ async function reload() {
   buildIndex(raw);
   render();
 }
-function navigate(nav) { NAV=nav; render(); }
+function navigate(nav) { NAV={...nav,tabIdx:undefined}; render(); }
 function goBack() {
   if (NAV.screen==='work') navigate({screen:'composer',composerName:NAV.composerName});
   else navigate({screen:'home'});
@@ -949,7 +949,7 @@ function renderWorkScreen() {
 
   const movements=IDX.movsByWork.get(workId)||[];
   const isMulti=movements.length>1;
-  let currentTab=0;
+  let currentTab=NAV.tabIdx||0;
   const screen=div({className:'screen'});
 
   const topbar=div({className:'topbar'},
@@ -1011,6 +1011,7 @@ function renderWorkScreen() {
 
   function setTab(idx) {
     currentTab=idx;
+    NAV.tabIdx=idx;
     contentArea.innerHTML='';
     if (movements.length===0) {
       contentArea.appendChild(div({className:'empty'},

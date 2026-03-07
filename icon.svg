@@ -1,5 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
   <rect width="192" height="192" rx="32" fill="#7B9E87"/>
-  <text x="96" y="140" font-family="Georgia, serif" font-size="130" font-weight="bold"
-    text-anchor="middle" fill="white" opacity="0.95">R</text>
+  <!--
+    Serif R on 192x192.
+    Stem: x 36-58, full height 28-164
+    Top serif: x 28-66, y 28-40
+    Bottom serif: x 28-66, y 152-164
+    Bowl: cubic bezier, top half, x 58-142
+    Leg: diagonal from (102,96) to (154,164), with bottom-right serif
+  -->
+  <path fill="white" d="
+    M 28 28 L 66 28 L 66 40 L 58 40 L 58 152 L 66 152 L 66 164 L 28 164 L 28 152 L 36 152 L 36 40 L 28 40 Z
+    M 58 40 L 108 40 C 148 40 148 96 108 96 L 58 96 L 58 84 L 106 84 C 130 84 130 52 106 52 L 58 52 Z
+    M 100 96 L 154 164 L 136 164 L 82 96 Z
+    M 124 152 L 162 152 L 162 164 L 124 164 Z
+  "/>
 </svg>
