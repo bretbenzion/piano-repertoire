@@ -524,23 +524,29 @@ function sectionDialog(movement, allSections, editSection, onSave) {
   const fStart = fieldEl('Start measure', start, v=>start=v, {type:'number',flex:true});
   const fEnd   = fieldEl('End measure',   end,   v=>end=v,   {type:'number',flex:true});
   const err    = span({className:'err',style:{display:'none'}});
-  const gs     = gradeSelector(grade, g=>grade=g);
+  const setErr=msg=>{err.textContent=msg;err.style.display=msg?'':'none';};
+
+  function trySave() {
+    const s=parseInt(start),e=parseInt(end);
+    if(isNaN(s)||isNaN(e)){setErr('Enter valid measure numbers');return false;}
+    if(s<1||e>movement.totalMeasures){setErr('Must be within 1\u2013'+movement.totalMeasures);return false;}
+    if(s>e){setErr('Start must be \u2264 end');return false;}
+    if(allSections.some(sec=>sec.id!==(editSection?.id??-1)&&e>=sec.startMeasure&&s<=sec.endMeasure)){setErr('Overlaps an existing section');return false;}
+    m.remove(); onSave(s,e,grade,name.trim()); return true;
+  }
+
+  const gs = gradeSelector(grade, g=>{
+    grade=g;
+    if (editSection) trySave();
+  });
   const body   = div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
     fName,
     div({className:'row-fields'}, fStart, fEnd), err,
     div({},el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Grade'), gs)
   );
-  const setErr=msg=>{err.textContent=msg;err.style.display=msg?'':'none';};
   const foot = div({style:{display:'flex',gap:'8px'}},
     btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
-    btn({className:'btn-primary', onClick:()=>{
-      const s=parseInt(start),e=parseInt(end);
-      if(isNaN(s)||isNaN(e)){setErr('Enter valid measure numbers');return;}
-      if(s<1||e>movement.totalMeasures){setErr('Must be within 1\u2013'+movement.totalMeasures);return;}
-      if(s>e){setErr('Start must be \u2264 end');return;}
-      if(allSections.some(sec=>sec.id!==(editSection?.id??-1)&&e>=sec.startMeasure&&s<=sec.endMeasure)){setErr('Overlaps an existing section');return;}
-      m.remove(); onSave(s,e,grade,name.trim());
-    }}, 'Save')
+    btn({className:'btn-primary', onClick:trySave}, 'Save')
   );
   const m = modal(editSection?'Edit Section':'Add Section', body, foot, ()=>m.remove());
 }
