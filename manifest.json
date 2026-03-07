@@ -2,7 +2,7 @@
   "name": "Piano Repertoire",
   "short_name": "Repertoire",
   "description": "Track progress on piano pieces",
-  "start_url": "/RepTracker/index.html",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#F5F4F0",
   "theme_color": "#7B9E87",
