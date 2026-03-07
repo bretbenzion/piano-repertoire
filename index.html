@@ -520,7 +520,7 @@ function sectionDialog(movement, allSections, editSection, onSave) {
   let end=editSection?.endMeasure?.toString()||'';
   let grade=editSection?.grade||'B';
   let name=editSection?.name||'';
-  const fName  = fieldEl('Section name (optional)', name, v=>name=v, {autoFocus:true, placeholder:'e.g. Exposition'});
+  const fName  = fieldEl('Section name (optional)', name, v=>name=v, {autoFocus:!editSection, placeholder:'e.g. Exposition'});
   const fStart = fieldEl('Start measure', start, v=>start=v, {type:'number',flex:true});
   const fEnd   = fieldEl('End measure',   end,   v=>end=v,   {type:'number',flex:true});
   const err    = span({className:'err',style:{display:'none'}});
