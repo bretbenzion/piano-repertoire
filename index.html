@@ -75,6 +75,14 @@ button{cursor:pointer}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px}
 .empty p{color:#9E9E9E;text-align:center;line-height:1.8}
 .section-content{padding:16px 16px 100px;overflow-y:auto;flex:1}
+.notes-block{background:#EFEEE9;border-radius:9px;padding:11px 13px;margin-bottom:18px;font-size:14px;color:#4A4A4A;line-height:1.6;white-space:pre-wrap}
+.notes-toggle{background:none;border:none;font-size:13px;color:#9E9E9E;padding:0;font-family:inherit;cursor:pointer;text-align:left}
+.reorder-btn{background:none;border:none;font-size:18px;color:#BDBDBD;padding:2px 4px;line-height:1;font-family:inherit}
+.reorder-btn:active{color:#7B9E87}
+.ai-box{border-radius:9px;padding:13px 14px;margin-bottom:18px;background:#EEF3FF;border:1px solid #C5D3F0;font-size:14px;color:#2E2E2E;line-height:1.7}
+.ai-box-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.ai-section-title{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#5B6FA8;text-transform:uppercase;margin-top:10px;margin-bottom:3px}
+.date-label{font-size:11px;color:#BDBDBD}
 </style>
 </head>
 <body>
@@ -91,12 +99,50 @@ const GRADE_COLOR = {
 const TAGS = ['Current','Finished','Shelved'];
 const TAG_COLOR = {Current:'#7B9E87',Finished:'#8599AE',Shelved:'#9E9E9E'};
 
+// ─── DATE HELPERS ─────────────────────────────────────────────────────────────
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return months[d.getMonth()] + ' ' + d.getDate() + (sameYear ? '' : ' ' + d.getFullYear());
+}
+
+// ─── API KEY ──────────────────────────────────────────────────────────────────
+const getApiKey = () => localStorage.getItem('repertoire_api_key')||'';
+const setApiKey = v => localStorage.setItem('repertoire_api_key', v);
+
+// ─── AI SUMMARIES (cached in IndexedDB key-value store) ───────────────────────
+// Stored as summaries:<movementId> → {text, generatedAt}
+async function getSummary(movId) {
+  return new Promise((res,rej)=>{
+    const tx=_db.transaction('summaries','readonly');
+    const r=tx.objectStore('summaries').get('mov:'+movId);
+    r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null);
+  });
+}
+async function saveSummary(movId, text) {
+  return new Promise((res,rej)=>{
+    const tx=_db.transaction('summaries','readwrite');
+    const r=tx.objectStore('summaries').put({id:'mov:'+movId,text,generatedAt:Date.now()});
+    r.onsuccess=()=>res(); r.onerror=()=>rej(r.error);
+  });
+}
+async function deleteSummary(movId) {
+  return new Promise((res)=>{
+    const tx=_db.transaction('summaries','readwrite');
+    tx.objectStore('summaries').delete('mov:'+movId);
+    tx.oncomplete=()=>res();
+  });
+}
+
 // ─── DATABASE ─────────────────────────────────────────────────────────────────
 let _db = null;
 function openDB() {
   if (_db) return Promise.resolve(_db);
   return new Promise((res,rej) => {
-    const r = indexedDB.open('piano_repertoire',1);
+    const r = indexedDB.open('piano_repertoire',2);
     r.onupgradeneeded = e => {
       const db = e.target.result;
       const mk = (n,idx) => {
@@ -106,6 +152,8 @@ function openDB() {
         }
       };
       mk('composers'); mk('works','composerId'); mk('movements','workId'); mk('sections','movementId');
+      if (!db.objectStoreNames.contains('summaries'))
+        db.createObjectStore('summaries',{keyPath:'id'});
     };
     r.onsuccess = e => { _db = e.target.result; res(_db); };
     r.onerror   = () => rej(r.error);
@@ -462,6 +510,68 @@ function gradeSelector(current, onChange) {
   }
   refresh();
   return wrap;
+}
+
+// ─── API KEY MODAL ────────────────────────────────────────────────────────────
+function apiKeyModal() {
+  let val = getApiKey();
+  const inp2 = el('input',{type:'password',value:val,placeholder:'sk-ant-api03-…',
+    style:{fontSize:'15px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',
+      background:'#fff',color:'#2E2E2E',outline:'none',width:'100%',fontFamily:'inherit'}});
+  inp2.addEventListener('input',()=>val=inp2.value);
+  inp2.addEventListener('focus',()=>inp2.style.borderColor='#7B9E87');
+  inp2.addEventListener('blur',()=>inp2.style.borderColor='#E4E3DE');
+  const body=div({style:{display:'flex',flexDirection:'column',gap:'12px',paddingBottom:'8px'}},
+    para({style:{fontSize:'13px',color:'#6B6B6B',lineHeight:'1.6'}},'Get a key at console.anthropic.com. It\'s stored only on this device.'),
+    div({className:'field'},el('label',{},'Anthropic API key'),inp2)
+  );
+  const foot=div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:()=>{setApiKey(val.trim());m.remove();}},'Save')
+  );
+  const m=modal('AI Settings',body,foot,()=>m.remove());
+  setTimeout(()=>inp2.focus(),50);
+}
+
+// ─── AI SUMMARY GENERATOR ─────────────────────────────────────────────────────
+async function generateSummary(movement, workTitle, composerName) {
+  const key=getApiKey();
+  if (!key) { apiKeyModal(); return null; }
+  const secs=(IDX.secsByMov.get(movement.id)||[]).slice().sort((a,b)=>a.startMeasure-b.startMeasure);
+  const secLines=secs.length
+    ? secs.map((s,i)=>`  - ${s.name||'Section '+(i+1)}: mm.${s.startMeasure}–${s.endMeasure}, grade ${s.grade}`).join('\n')
+    : '  (no sections graded yet)';
+  const masteryPct=pct(movMastery(movement));
+  const prompt=`You are a piano practice coach. A student is tracking their repertoire. Here is data for one movement:
+
+Piece: "${workTitle}" by ${composerName}
+Movement: "${movement.name}"
+Total measures: ${movement.totalMeasures}
+Target BPM: ${movement.targetBpm}
+Overall mastery: ${masteryPct}
+Sections:
+${secLines}
+${movement.notes?`\nPractice notes from student:\n${movement.notes}`:''}
+
+Write a concise movement summary with exactly these four sections, each with a short heading:
+1. About (1–2 sentences describing this movement and its character/difficulty)
+2. Progress (assessment of current mastery based on the grades and coverage)
+3. Notes analysis (if notes are present, analyse them; if not, omit this section entirely)
+4. Suggestions (2–3 specific, actionable practice suggestions)
+
+Be direct, encouraging, and specific. Do not use bullet points inside sections — write in prose.`;
+
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:prompt}]})
+  });
+  if (!resp.ok) {
+    const e=await resp.json().catch(()=>({}));
+    throw new Error(e?.error?.message||'API error '+resp.status);
+  }
+  const data=await resp.json();
+  return data.content?.[0]?.text||'';
 }
 
 // ─── DIALOGS ─────────────────────────────────────────────────────────────────
@@ -866,11 +976,39 @@ function sectionRow(section, idx, allSections, movement, workId) {
 function movementTab(movement, workId) {
   const mySections=(IDX.secsByMov.get(movement.id)||[]).slice().sort((a,b)=>a.startMeasure-b.startMeasure);
   const mastery=movMastery(movement);
-  const siblingsCount=(IDX.movsByWork.get(workId)||[]).length;
+  const siblings=IDX.movsByWork.get(workId)||[];
+  const siblingsCount=siblings.length;
+  const myIdx=siblings.findIndex(m=>m.id===movement.id);
+  const work=IDX.workById.get(workId);
+  const composer=IDX.composerById.get(work?.composerId);
+
+  // ── Reorder helpers ──
+  async function moveUp() {
+    if(myIdx<=0) return;
+    const other=siblings[myIdx-1];
+    const a={...movement,orderIndex:other.orderIndex};
+    const b={...other,orderIndex:movement.orderIndex};
+    await dbPut('movements',a); await dbPut('movements',b);
+    applyMutations([{type:'put',store:'movements',record:a},{type:'put',store:'movements',record:b}]);
+  }
+  async function moveDown() {
+    if(myIdx>=siblingsCount-1) return;
+    const other=siblings[myIdx+1];
+    const a={...movement,orderIndex:other.orderIndex};
+    const b={...other,orderIndex:movement.orderIndex};
+    await dbPut('movements',a); await dbPut('movements',b);
+    applyMutations([{type:'put',store:'movements',record:a},{type:'put',store:'movements',record:b}]);
+  }
 
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'22px'}});
   pbarRow.appendChild(div({style:{flex:'1'}},progressBar(movement.totalMeasures,mySections)));
   pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'52px',textAlign:'right'}},pct(mastery)));
+
+  // ── Reorder buttons (only if multi-movement) ──
+  const reorderBtns = siblingsCount>1 ? div({style:{display:'flex',flexDirection:'column',gap:'0px',marginLeft:'4px'}},
+    btn({className:'reorder-btn',onClick:moveUp,style:{opacity:myIdx===0?'0.2':'1'}}, '▲'),
+    btn({className:'reorder-btn',onClick:moveDown,style:{opacity:myIdx===siblingsCount-1?'0.2':'1'}}, '▼')
+  ) : null;
 
   const editBtn=btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
     onClick:()=>movementDialog(movement,async(name,totalMeasures,targetBpm,notes)=>{
@@ -893,18 +1031,97 @@ function movementTab(movement, workId) {
     })},'Edit');
   const extractBtn=siblingsCount>1?btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
     onClick:()=>extractToWorkDialog(movement,workId)},'\u2197 Extract'):null;
-  const headerBtns=div({style:{display:'flex',gap:'6px',flexShrink:'0',marginTop:'2px'}},editBtn,extractBtn);
+  const headerBtns=div({style:{display:'flex',gap:'6px',flexShrink:'0',marginTop:'2px',alignItems:'center'}},
+    reorderBtns, editBtn, extractBtn);
+
+  // ── Date label ──
+  const dateStr = fmtDate(work?.lastWorked);
+  const dateLbl = dateStr ? span({className:'date-label'}, 'Updated ' + dateStr) : null;
+
+  // ── Notes block with toggle ──
+  let notesVisible = false;
+  const notesContent = movement.notes ? div({className:'notes-block'},movement.notes) : null;
+  const notesToggle = movement.notes ? btn({className:'notes-toggle',style:{marginBottom:'12px'}},
+    (notesVisible ? '▾ ' : '▸ ') + 'Notes & feedback') : null;
+  if (notesContent) notesContent.style.display = 'none';
+  if (notesToggle) notesToggle.addEventListener('click',()=>{
+    notesVisible=!notesVisible;
+    notesContent.style.display=notesVisible?'':'none';
+    notesToggle.textContent=(notesVisible?'▾ ':'▸ ')+'Notes & feedback';
+  });
+
+  // ── AI Summary block ──
+  const aiBox = div({style:{marginBottom:'18px'}});
+  let cachedSummary = null;
+
+  function renderAiBox(state, text) {
+    aiBox.innerHTML='';
+    if (state==='empty') {
+      const genBtn=btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px',color:'#5B6FA8'},
+        onClick:async()=>{
+          renderAiBox('loading');
+          try {
+            const result=await generateSummary(movement,work?.title||'',composer?.name||'Unknown');
+            if (result) { await saveSummary(movement.id,result); cachedSummary=result; renderAiBox('done',result); }
+            else renderAiBox('empty');
+          } catch(e){ renderAiBox('error',e.message); }
+        }},'✦ Generate summary');
+      aiBox.appendChild(genBtn);
+    } else if (state==='loading') {
+      aiBox.appendChild(div({style:{fontSize:'13px',color:'#9E9E9E',padding:'4px 0'}},'Generating…'));
+    } else if (state==='done') {
+      // Parse sections from text
+      const head=div({className:'ai-box-head'},
+        span({style:{fontSize:'11px',letterSpacing:'.5px',fontWeight:'bold',color:'#5B6FA8',textTransform:'uppercase'}},'AI Summary'),
+        div({style:{display:'flex',gap:'4px'}},
+          btn({className:'btn',style:{padding:'2px 8px',fontSize:'12px',color:'#5B6FA8'},onClick:async()=>{
+            renderAiBox('loading');
+            try{const r=await generateSummary(movement,work?.title||'',composer?.name||'Unknown');
+              if(r){await saveSummary(movement.id,r);cachedSummary=r;renderAiBox('done',r);}
+              else renderAiBox('empty');
+            }catch(e){renderAiBox('error',e.message);}
+          }},'↺ Regenerate'),
+          btn({className:'btn',style:{padding:'2px 8px',fontSize:'12px',color:'#BB5050'},onClick:async()=>{
+            await deleteSummary(movement.id);cachedSummary=null;renderAiBox('empty');
+          }},'✕')
+        )
+      );
+      const textEl=div({style:{fontSize:'14px',lineHeight:'1.7',color:'#2E2E2E',whiteSpace:'pre-wrap'}},text);
+      aiBox.appendChild(div({className:'ai-box'},head,textEl));
+    } else if (state==='error') {
+      aiBox.appendChild(div({style:{fontSize:'13px',color:'#BB5050',padding:'4px 0'}},'Error: '+text+' — '));
+      const retry=btn({className:'btn',style:{padding:'0',fontSize:'13px',color:'#5B6FA8',display:'inline'}},
+        'Try again');
+      retry.addEventListener('click',async()=>{
+        renderAiBox('loading');
+        try{const r=await generateSummary(movement,work?.title||'',composer?.name||'Unknown');
+          if(r){await saveSummary(movement.id,r);cachedSummary=r;renderAiBox('done',r);}
+          else renderAiBox('empty');
+        }catch(e2){renderAiBox('error',e2.message);}
+      });
+      aiBox.lastChild.appendChild(retry);
+    }
+  }
+
+  // Load cached summary async then render
+  renderAiBox('empty');
+  getSummary(movement.id).then(s=>{
+    if(s){cachedSummary=s.text;renderAiBox('done',s.text);}
+  });
 
   return div({className:'section-content'},
-    div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'14px'}},
+    div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'4px'}},
       div({},
         div({style:{fontSize:'19px',fontWeight:'bold',color:'#2E2E2E'}},movement.name),
         div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},movement.totalMeasures+' measures \u00b7 BPM = '+movement.targetBpm)
       ),
       headerBtns
     ),
+    dateLbl ? div({style:{marginBottom:'14px'}},dateLbl) : div({style:{marginBottom:'14px'}}),
     pbarRow,
-    movement.notes ? div({style:{background:'#EFEEE9',borderRadius:'9px',padding:'11px 13px',marginBottom:'18px',fontSize:'14px',color:'#4A4A4A',lineHeight:'1.6',whiteSpace:'pre-wrap'}},movement.notes) : null,
+    notesToggle,
+    notesContent,
+    aiBox,
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
       span({className:'label'},'Sections'),
       btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px'},
@@ -944,7 +1161,10 @@ function summaryTab(work, movements, setTab, isMulti) {
         span({style:{fontSize:'14px',color:'#6B6B6B'}},pct(ms))
       ),
       progressBar(m.totalMeasures,secs),
-      div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm)
+      div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},
+        m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm +
+        (work.lastWorked ? ' \u00b7 ' + fmtDate(work.lastWorked) : '')
+      )
     ));
   }
   return content;
@@ -1091,7 +1311,8 @@ function renderComposerScreen() {
         div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
         div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
           tagChip(w.tag),
-          movCount>0?span({className:'small'},movCount+' movement'+(movCount!==1?'s':'')):null
+          movCount>0?span({className:'small'},movCount+' movement'+(movCount!==1?'s':'')):null,
+          w.lastWorked?span({className:'date-label'},fmtDate(w.lastWorked)):null
         )
       ),
       movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
@@ -1113,6 +1334,7 @@ function renderHomeScreen() {
       span({style:{fontSize:'20px',color:'#2E2E2E'}},'Repertoire'),
       div({style:{display:'flex',gap:'4px',alignItems:'center'}},
         btn({className:'btn-icon',style:{fontSize:'18px',marginRight:'2px'},title:'Backup & Restore',onClick:()=>dataModal(reload)},'\u2b06\ufe0e'),
+        btn({className:'btn-icon',style:{fontSize:'16px',marginRight:'2px'},title:'AI Settings',onClick:()=>apiKeyModal()},'\u2699\ufe0e'),
         ...(['composer','recent'].map(mode=>
           btn({className:'pill'+(sortMode===mode?' active':''),onClick:()=>{sortMode=mode;buildList();}},mode==='composer'?'Composer':'Recent')
         ))
@@ -1161,7 +1383,10 @@ function renderHomeScreen() {
           div({style:{flex:'1'}},
             div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
             div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
-            div({style:{display:'flex',gap:'8px',marginTop:'6px',alignItems:'center'}},tagChip(w.tag))
+            div({style:{display:'flex',gap:'8px',marginTop:'6px',alignItems:'center'}},
+              tagChip(w.tag),
+              w.lastWorked?span({className:'date-label'},fmtDate(w.lastWorked)):null
+            )
           ),
           movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
         ));
