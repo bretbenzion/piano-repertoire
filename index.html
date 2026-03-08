@@ -115,24 +115,24 @@ const setApiKey = v => localStorage.setItem('repertoire_api_key', v);
 
 // ─── AI SUMMARIES (cached in IndexedDB key-value store) ───────────────────────
 // Stored as summaries:<movementId> → {text, generatedAt}
-async function getSummary(movId) {
-  return new Promise((res,rej)=>{
+async function getSummary(key) {
+  return new Promise((res)=>{
     const tx=_db.transaction('summaries','readonly');
-    const r=tx.objectStore('summaries').get('mov:'+movId);
+    const r=tx.objectStore('summaries').get(key);
     r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null);
   });
 }
-async function saveSummary(movId, text) {
+async function saveSummary(key, text) {
   return new Promise((res,rej)=>{
     const tx=_db.transaction('summaries','readwrite');
-    const r=tx.objectStore('summaries').put({id:'mov:'+movId,text,generatedAt:Date.now()});
+    const r=tx.objectStore('summaries').put({id:key,text,generatedAt:Date.now()});
     r.onsuccess=()=>res(); r.onerror=()=>rej(r.error);
   });
 }
-async function deleteSummary(movId) {
+async function deleteSummary(key) {
   return new Promise((res)=>{
     const tx=_db.transaction('summaries','readwrite');
-    tx.objectStore('summaries').delete('mov:'+movId);
+    tx.objectStore('summaries').delete(key);
     tx.oncomplete=()=>res();
   });
 }
@@ -554,7 +554,7 @@ ${secLines}
 ${movement.notes?`\nPractice notes from student:\n${movement.notes}`:''}
 
 Write a concise movement summary with exactly these four sections, each with a short heading:
-1. About (1–2 sentences describing this movement and its character/difficulty)
+1. About (1–2 sentences describing this movement and its character/difficulty, including a natural description of its difficulty level as pianists would commonly describe it)
 2. Progress (assessment of current mastery based on the grades and coverage)
 3. Notes analysis (if notes are present, analyse them; if not, omit this section entirely)
 4. Suggestions (2–3 specific, actionable practice suggestions)
@@ -565,6 +565,48 @@ Be direct, encouraging, and specific. Do not use bullet points inside sections �
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
     body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:prompt}]})
+  });
+  if (!resp.ok) {
+    const e=await resp.json().catch(()=>({}));
+    throw new Error(e?.error?.message||'API error '+resp.status);
+  }
+  const data=await resp.json();
+  return data.content?.[0]?.text||'';
+}
+
+async function generateWorkSummary(work, movements, composerName) {
+  const key=getApiKey();
+  if (!key) { apiKeyModal(); return null; }
+  const movLines=movements.map(m=>{
+    const secs=(IDX.secsByMov.get(m.id)||[]).slice().sort((a,b)=>a.startMeasure-b.startMeasure);
+    const secStr=secs.length
+      ? secs.map((s,i)=>`    - ${s.name||'Section '+(i+1)}: mm.${s.startMeasure}–${s.endMeasure}, grade ${s.grade}`).join('\n')
+      : '    (no sections graded yet)';
+    const mp=pct(movMastery(m));
+    return `  Movement: "${m.name}" | ${m.totalMeasures} mm | BPM ${m.targetBpm} | mastery ${mp}\n${secStr}`+
+      (m.notes?`\n  Student notes: ${m.notes}`:'');
+  }).join('\n\n');
+  const overallPct=pct(workMastery(work.id));
+
+  const prompt=`You are a piano practice coach. A student is tracking their repertoire. Here is data for a complete work:
+
+Piece: "${work.title}" by ${composerName}
+Overall mastery: ${overallPct}
+
+${movLines}
+
+Write a concise work-level summary with exactly these four sections, each with a short heading:
+1. About (2–3 sentences describing the work as a whole — its character, structure, and significance — including a natural description of its difficulty level as pianists would commonly describe it)
+2. Progress (assessment of progress across all movements, noting which are strongest and which need most work)
+3. Notes analysis (synthesise any student notes across movements; if none exist, omit this section entirely)
+4. Suggestions (3–4 specific, actionable practice suggestions considering the whole work)
+
+Be direct, encouraging, and specific. Do not use bullet points inside sections — write in prose.`;
+
+  const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,messages:[{role:'user',content:prompt}]})
   });
   if (!resp.ok) {
     const e=await resp.json().catch(()=>({}));
@@ -1051,63 +1093,8 @@ function movementTab(movement, workId) {
   });
 
   // ── AI Summary block ──
-  const aiBox = div({style:{marginBottom:'18px'}});
-  let cachedSummary = null;
-
-  function renderAiBox(state, text) {
-    aiBox.innerHTML='';
-    if (state==='empty') {
-      const genBtn=btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px',color:'#5B6FA8'},
-        onClick:async()=>{
-          renderAiBox('loading');
-          try {
-            const result=await generateSummary(movement,work?.title||'',composer?.name||'Unknown');
-            if (result) { await saveSummary(movement.id,result); cachedSummary=result; renderAiBox('done',result); }
-            else renderAiBox('empty');
-          } catch(e){ renderAiBox('error',e.message); }
-        }},'✦ Generate summary');
-      aiBox.appendChild(genBtn);
-    } else if (state==='loading') {
-      aiBox.appendChild(div({style:{fontSize:'13px',color:'#9E9E9E',padding:'4px 0'}},'Generating…'));
-    } else if (state==='done') {
-      // Parse sections from text
-      const head=div({className:'ai-box-head'},
-        span({style:{fontSize:'11px',letterSpacing:'.5px',fontWeight:'bold',color:'#5B6FA8',textTransform:'uppercase'}},'AI Summary'),
-        div({style:{display:'flex',gap:'4px'}},
-          btn({className:'btn',style:{padding:'2px 8px',fontSize:'12px',color:'#5B6FA8'},onClick:async()=>{
-            renderAiBox('loading');
-            try{const r=await generateSummary(movement,work?.title||'',composer?.name||'Unknown');
-              if(r){await saveSummary(movement.id,r);cachedSummary=r;renderAiBox('done',r);}
-              else renderAiBox('empty');
-            }catch(e){renderAiBox('error',e.message);}
-          }},'↺ Regenerate'),
-          btn({className:'btn',style:{padding:'2px 8px',fontSize:'12px',color:'#BB5050'},onClick:async()=>{
-            await deleteSummary(movement.id);cachedSummary=null;renderAiBox('empty');
-          }},'✕')
-        )
-      );
-      const textEl=div({style:{fontSize:'14px',lineHeight:'1.7',color:'#2E2E2E',whiteSpace:'pre-wrap'}},text);
-      aiBox.appendChild(div({className:'ai-box'},head,textEl));
-    } else if (state==='error') {
-      aiBox.appendChild(div({style:{fontSize:'13px',color:'#BB5050',padding:'4px 0'}},'Error: '+text+' — '));
-      const retry=btn({className:'btn',style:{padding:'0',fontSize:'13px',color:'#5B6FA8',display:'inline'}},
-        'Try again');
-      retry.addEventListener('click',async()=>{
-        renderAiBox('loading');
-        try{const r=await generateSummary(movement,work?.title||'',composer?.name||'Unknown');
-          if(r){await saveSummary(movement.id,r);cachedSummary=r;renderAiBox('done',r);}
-          else renderAiBox('empty');
-        }catch(e2){renderAiBox('error',e2.message);}
-      });
-      aiBox.lastChild.appendChild(retry);
-    }
-  }
-
-  // Load cached summary async then render
-  renderAiBox('empty');
-  getSummary(movement.id).then(s=>{
-    if(s){cachedSummary=s.text;renderAiBox('done',s.text);}
-  });
+  const aiBox=makeAiBox('mov:'+movement.id,
+    ()=>generateSummary(movement,work?.title||'',composer?.name||'Unknown'));
 
   return div({className:'section-content'},
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'4px'}},
@@ -1139,16 +1126,74 @@ function movementTab(movement, workId) {
   );
 }
 
+// ─── REUSABLE AI BOX ─────────────────────────────────────────────────────────
+function makeAiBox(cacheKey, generateFn) {
+  const box=div({style:{marginBottom:'18px'}});
+  function render(state,text) {
+    box.innerHTML='';
+    if (state==='empty') {
+      box.appendChild(btn({className:'btn',style:{padding:'4px 10px',fontSize:'13px',color:'#5B6FA8'},
+        onClick:async()=>{
+          render('loading');
+          try{const r=await generateFn();
+            if(r){await saveSummary(cacheKey,r);render('done',r);}
+            else render('empty');
+          }catch(e){render('error',e.message);}
+        }},'✦ Generate summary'));
+    } else if (state==='loading') {
+      box.appendChild(div({style:{fontSize:'13px',color:'#9E9E9E',padding:'4px 0'}},'Generating…'));
+    } else if (state==='done') {
+      const head=div({className:'ai-box-head'},
+        span({style:{fontSize:'11px',letterSpacing:'.5px',fontWeight:'bold',color:'#5B6FA8',textTransform:'uppercase'}},'AI Summary'),
+        div({style:{display:'flex',gap:'4px'}},
+          btn({className:'btn',style:{padding:'2px 8px',fontSize:'12px',color:'#5B6FA8'},onClick:async()=>{
+            render('loading');
+            try{const r=await generateFn();
+              if(r){await saveSummary(cacheKey,r);render('done',r);}
+              else render('empty');
+            }catch(e){render('error',e.message);}
+          }},'↺ Regenerate'),
+          btn({className:'btn',style:{padding:'2px 8px',fontSize:'12px',color:'#BB5050'},onClick:async()=>{
+            await deleteSummary(cacheKey);render('empty');
+          }},'✕')
+        )
+      );
+      box.appendChild(div({className:'ai-box'},head,
+        div({style:{fontSize:'14px',lineHeight:'1.7',color:'#2E2E2E',whiteSpace:'pre-wrap'}},text)));
+    } else if (state==='error') {
+      const errDiv=div({style:{fontSize:'13px',color:'#BB5050',padding:'4px 0'}},'Error: '+text+' — ');
+      const retry=btn({className:'btn',style:{padding:'0',fontSize:'13px',color:'#5B6FA8',display:'inline'}},'Try again');
+      retry.addEventListener('click',async()=>{
+        render('loading');
+        try{const r=await generateFn();
+          if(r){await saveSummary(cacheKey,r);render('done',r);}
+          else render('empty');
+        }catch(e2){render('error',e2.message);}
+      });
+      errDiv.appendChild(retry);
+      box.appendChild(errDiv);
+    }
+  }
+  render('empty');
+  getSummary(cacheKey).then(s=>{ if(s) render('done',s.text); });
+  return box;
+}
+
 // ─── SUMMARY TAB ─────────────────────────────────────────────────────────────
 function summaryTab(work, movements, setTab, isMulti) {
   const mastery=workMastery(work.id);
+  const composer=IDX.composerById.get(work.composerId);
   const pbarRow=div({style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'26px'}});
   pbarRow.appendChild(div({style:{flex:'1'}},combinedProgressBar(movements,IDX.secsByMov)));
   pbarRow.appendChild(div({style:{fontSize:'16px',fontWeight:'bold',minWidth:'52px',textAlign:'right'}},pct(mastery)));
 
+  const workAiBox=makeAiBox('work:'+work.id,
+    ()=>generateWorkSummary(work,movements,composer?.name||'Unknown'));
+
   const content=div({style:{padding:'16px 16px 32px',overflowY:'auto',flex:'1'}},
     span({className:'label',style:{display:'block',marginBottom:'8px'}},'Overall Progress'),
     pbarRow,
+    workAiBox,
     span({className:'label',style:{display:'block',marginBottom:'10px'}},'Movements')
   );
   for (const [i,m] of movements.entries()) {
