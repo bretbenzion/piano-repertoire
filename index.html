@@ -8,6 +8,10 @@
 <meta name="apple-mobile-web-app-title" content="Repertoire"/>
 <title>Repertoire</title>
 <link rel="manifest" href="manifest.json"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>(function(){if(localStorage.getItem('repertoire_theme')==='sans')document.body&&document.body.classList.add('theme-sans')||document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('theme-sans');});})();</script>
 <style>
 /* ─── THEME ─────────────────────────────────────────────────────────────── */
 :root{
@@ -16,9 +20,9 @@
   --radius:7px;--card-radius:10px;
 }
 body.theme-sans{
-  --bg:#F8F9FA;--bg2:#F0F2F4;--border:#DDE1E7;--text:#1A1A2E;--sub:#555E6C;
-  --muted:#8A94A0;--accent:#4A6FA5;--font:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --radius:8px;--card-radius:12px;
+  --bg:#F7F8FA;--bg2:#EDEEF2;--border:#DDE0E9;--text:#111827;--sub:#4B5563;
+  --muted:#9CA3AF;--accent:#3B6FD4;--font:'Inter',system-ui,sans-serif;
+  --radius:10px;--card-radius:14px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);overscroll-behavior:none}
@@ -135,12 +139,17 @@ const GRADE_MASTERY = {'A+':1,'A':1,'A-':.9,'B+':0.8,'B':.75,'B-':.7,'C':.5,'D':
 const GRADE_COLOR = {
   'A+':'#1B5E20','A':'#2E7D32','A-':'#43A047',
   'B+':'#66BB6A','B':'#81C784','B-':'#A5D6A7',
-  'C':'#BFAA3A','D':'#CC8040','E':'#BB5050'
+  'C':'#F9C200','D':'#F47B00','E':'#E53935'
 };
 const TAGS = ['Current','Finished','Shelved'];
 const TAG_COLOR = {Current:'#7B9E87',Finished:'#8599AE',Shelved:'#9E9E9E'};
 
 // ─── DATE HELPERS ─────────────────────────────────────────────────────────────
+// Always use local calendar date, not UTC, to avoid timezone-shift bugs
+function localDateStr(ts) {
+  const d = new Date(ts);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
 function fmtDate(ts) {
   if (!ts) return '';
   const d = new Date(ts);
@@ -251,7 +260,7 @@ function openDB() {
           const sessions=ev.target.result||[];
           const acc=new Map();
           for (const s of sessions) {
-            const date=new Date(s.timestamp).toISOString().slice(0,10);
+            const date=localDateStr(s.timestamp);
             const key=date+':'+s.subjectId;
             if (!acc.has(key)) acc.set(key,{id:key,date,subjectId:s.subjectId,subjectType:s.subjectType,durationMs:0});
             acc.get(key).durationMs+=s.durationMs;
@@ -314,7 +323,7 @@ async function upsertDailyTotal(date, subjectId, subjectType, deltaMs) {
 async function recomputeDailyTotal(date, subjectId, subjectType) {
   // Re-sum all raw sessions for this subject on this date — called after delete
   const sessions=await dbSessionsBySubject(subjectId);
-  const dayMs=sessions.filter(s=>new Date(s.timestamp).toISOString().slice(0,10)===date)
+  const dayMs=sessions.filter(s=>localDateStr(s.timestamp)===date)
     .reduce((sum,s)=>sum+s.durationMs,0);
   const key=dtKey(date,subjectId);
   if (dayMs===0) {
@@ -526,7 +535,7 @@ async function importJSON(text) {
   for(const i of movements) await dbPut('movements',i);
   for(const i of sections)  await dbPut('sections',i);
 }
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>localDateStr(Date.now());
 function dl(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
 
 // ─── DOM HELPERS ─────────────────────────────────────────────────────────────
@@ -1387,8 +1396,12 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved, fromTimer=
   let ts=Date.now();
 
   const fMins=fieldEl('Duration (minutes)', mins, v=>mins=v, {type:'number',autoFocus:!defaultMs,min:'1'});
-  // Date/time picker
-  const dtStr=new Date(ts).toISOString().slice(0,16);
+  // Date/time picker — use local time (not UTC) for the default value
+  const localDtStr = d => {
+    const pad = n => String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  };
+  const dtStr=localDtStr(new Date(ts));
   const dtInp=el('input',{type:'datetime-local',value:dtStr,
     style:{fontSize:'14px',padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:'var(--radius)',background:'#fff',color:'var(--text)',outline:'none',width:'100%',fontFamily:'inherit'}});
   dtInp.addEventListener('change',()=>ts=new Date(dtInp.value).getTime());
@@ -1410,7 +1423,7 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved, fromTimer=
       // If from timer, use the raw ms (more precise); otherwise convert minutes
       const durationMs = fromTimer && defaultMs>0 ? defaultMs : Math.round(mVal*60000);
       const id=await dbPut('sessions',{subjectId,subjectType,durationMs,timestamp:ts,note:note.trim()});
-      const date=new Date(ts).toISOString().slice(0,10);
+      const date=localDateStr(ts);
       await upsertDailyTotal(date,subjectId,subjectType,durationMs);
       // Update movement.lastWorked if this is a movement session
       if (subjectType==='movement') {
@@ -1462,7 +1475,7 @@ function makeSessionLog(subjectId, subjectType) {
         btn({className:'btn-icon',style:{fontSize:'18px',color:'#BDBDBD'},onClick:async(e)=>{
           e.stopPropagation();
           if(!confirm('Delete this session?')) return;
-          const date=new Date(s.timestamp).toISOString().slice(0,10);
+          const date=localDateStr(s.timestamp);
           await dbDel('sessions',s.id);
           await recomputeDailyTotal(date,s.subjectId,s.subjectType);
           sessions=sessions.filter(x=>x.id!==s.id);
@@ -1699,7 +1712,11 @@ function renderHomeScreen() {
     header.innerHTML='';
     const isSans=document.body.classList.contains('theme-sans');
     const themeBtn=btn({className:'btn-icon',style:{fontSize:'16px'},title:'Toggle theme',
-      onClick:()=>{document.body.classList.toggle('theme-sans');buildHeader();}},
+      onClick:()=>{
+        const going=document.body.classList.toggle('theme-sans');
+        localStorage.setItem('repertoire_theme', going?'sans':'serif');
+        buildHeader();
+      }},
       isSans?'𝒜':'A');
     const searchIcon=btn({className:'btn-icon',style:{fontSize:'20px'},title:'Search',
       onClick:()=>{
@@ -2064,10 +2081,10 @@ function renderStatsScreen() {
     content.innerHTML='';
     const [start,end,label]=periodBounds(activePeriod,offset);
     // Convert ms bounds to ISO date strings for the range index query
-    const startDate=new Date(start).toISOString().slice(0,10);
-    const endDate=new Date(end-1).toISOString().slice(0,10); // inclusive end date
+    const startDate=localDateStr(start);
+    const endDate=localDateStr(end-1); // inclusive end date
     // Fetch only aggregated daily rows in range — O(days) not O(sessions)
-    const dailyRows=await dbDailyTotalsRange(startDate, new Date(end).toISOString().slice(0,10));
+    const dailyRows=await dbDailyTotalsRange(startDate, localDateStr(end));
     const totalMs=dailyRows.reduce((s,x)=>s+x.durationMs,0);
 
     // Nav row
@@ -2093,8 +2110,8 @@ function renderStatsScreen() {
         activePeriod==='week'?'By Day':activePeriod==='month'?'By Week':'By Month'));
       const grid=div({style:{background:'var(--bg2)',borderRadius:'10px',padding:'0 14px'}});
       for (const b of buckets) {
-        const bStartDate=new Date(b.start).toISOString().slice(0,10);
-        const bEndDate=new Date(b.end).toISOString().slice(0,10);
+        const bStartDate=localDateStr(b.start);
+        const bEndDate=localDateStr(b.end);
         const bMs=dailyRows.filter(r=>r.date>=bStartDate&&r.date<bEndDate).reduce((s,x)=>s+x.durationMs,0);
         grid.appendChild(div({className:'stats-breakdown-row'},
           span({style:{fontSize:'14px',color:bMs>0?'var(--text)':'#BDBDBD'}},b.label),
@@ -2165,6 +2182,8 @@ function render() {
   if (screen) app.appendChild(screen);
 }
 (async()=>{
+  // Apply stored theme immediately
+  if (localStorage.getItem('repertoire_theme')==='sans') document.body.classList.add('theme-sans');
   document.getElementById('app').innerHTML='<div style="height:100dvh;display:flex;align-items:center;justify-content:center;color:#9E9E9E;">Loading\u2026</div>';
   await reload();
 })();
