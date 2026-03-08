@@ -83,6 +83,28 @@ button{cursor:pointer}
 .ai-box-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .ai-section-title{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#5B6FA8;text-transform:uppercase;margin-top:10px;margin-bottom:3px}
 .date-label{font-size:11px;color:#BDBDBD}
+.timer-block{background:#EFEEE9;border-radius:12px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:12px}
+.timer-display{font-size:28px;font-variant-numeric:tabular-nums;color:#2E2E2E;letter-spacing:1px;flex:1}
+.timer-btn{border:none;border-radius:8px;padding:8px 16px;font-size:14px;font-family:inherit;cursor:pointer}
+.timer-btn-start{background:#7B9E87;color:#fff}
+.timer-btn-stop{background:#BB5050;color:#fff}
+.timer-btn-log{background:#4A87CC;color:#fff}
+.session-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #E4E3DE;font-size:13px}
+.session-row:last-child{border-bottom:none}
+.bottom-nav{display:flex;border-top:1px solid #E4E3DE;background:#F5F4F0;flex-shrink:0;padding-bottom:env(safe-area-inset-bottom,0px)}
+.nav-btn{flex:1;background:none;border:none;padding:10px 0 8px;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit;cursor:pointer}
+.nav-btn-icon{font-size:22px;line-height:1}
+.nav-btn-label{font-size:10px;letter-spacing:.3px;color:#9E9E9E}
+.nav-btn.active .nav-btn-label{color:#7B9E87}
+.nav-btn.active .nav-btn-icon{color:#7B9E87}
+.nav-btn-icon{color:#9E9E9E}
+.stats-period-bar{display:flex;gap:6px;padding:12px 16px;overflow-x:auto;flex-shrink:0}
+.stats-big{font-size:42px;font-weight:bold;color:#2E2E2E;text-align:center;padding:24px 0 4px}
+.stats-big-label{font-size:13px;color:#9E9E9E;text-align:center;margin-bottom:20px}
+.stats-breakdown-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid #E4E3DE;font-size:14px}
+.stats-breakdown-row:last-child{border-bottom:none}
+.ex-row{padding:14px 16px;border-bottom:1px solid #E4E3DE;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.ex-row:active{background:#EFEEE9}
 </style>
 </head>
 <body>
@@ -109,7 +131,33 @@ function fmtDate(ts) {
   return months[d.getMonth()] + ' ' + d.getDate() + (sameYear ? '' : ' ' + d.getFullYear());
 }
 
-// ─── API KEY ──────────────────────────────────────────────────────────────────
+// ─── TIMER ────────────────────────────────────────────────────────────────────
+// Uses a Web Worker for better background reliability on Android.
+// Falls back to wall-clock arithmetic so the final duration is always correct
+// even if the worker was suspended.
+function createTimerWorker(onTick) {
+  const src=`let iv=null;self.onmessage=e=>{if(e.data==='start'){iv=setInterval(()=>self.postMessage('tick'),1000);}else{clearInterval(iv);}};`;
+  const url=URL.createObjectURL(new Blob([src],{type:'application/javascript'}));
+  const w=new Worker(url);
+  w.onmessage=()=>onTick();
+  w._url=url;
+  return w;
+}
+
+function fmtDuration(ms) {
+  if (!ms||ms<0) return '0:00';
+  const s=Math.floor(ms/1000), m=Math.floor(s/60), h=Math.floor(m/60);
+  if (h>0) return h+':'+(m%60).toString().padStart(2,'0')+':'+(s%60).toString().padStart(2,'0');
+  return m+':'+(s%60).toString().padStart(2,'0');
+}
+
+function fmtDurationLong(ms) {
+  if (!ms||ms<0) return '0 min';
+  const totalMin=Math.round(ms/60000);
+  if (totalMin<60) return totalMin+' min';
+  const h=Math.floor(totalMin/60), m=totalMin%60;
+  return h+'h'+(m>0?' '+m+'m':'');
+}
 const getApiKey = () => localStorage.getItem('repertoire_api_key')||'';
 const setApiKey = v => localStorage.setItem('repertoire_api_key', v);
 
@@ -142,7 +190,7 @@ let _db = null;
 function openDB() {
   if (_db) return Promise.resolve(_db);
   return new Promise((res,rej) => {
-    const r = indexedDB.open('piano_repertoire',2);
+    const r = indexedDB.open('piano_repertoire',3);
     r.onupgradeneeded = e => {
       const db = e.target.result;
       const mk = (n,idx) => {
@@ -154,6 +202,12 @@ function openDB() {
       mk('composers'); mk('works','composerId'); mk('movements','workId'); mk('sections','movementId');
       if (!db.objectStoreNames.contains('summaries'))
         db.createObjectStore('summaries',{keyPath:'id'});
+      if (!db.objectStoreNames.contains('sessions')) {
+        const ss=db.createObjectStore('sessions',{keyPath:'id',autoIncrement:true});
+        ss.createIndex('subjectId','subjectId'); // movementId or exerciseId
+      }
+      if (!db.objectStoreNames.contains('exercises'))
+        db.createObjectStore('exercises',{keyPath:'id',autoIncrement:true});
     };
     r.onsuccess = e => { _db = e.target.result; res(_db); };
     r.onerror   = () => rej(r.error);
@@ -178,6 +232,18 @@ async function loadAll() {
   );
   return {composers,works,movements,sections};
 }
+
+// Sessions: {id, subjectId, subjectType:'movement'|'exercise', durationMs, timestamp, note}
+const dbSessionsBySubject = (subjectId) => new Promise((res,rej)=>{
+  const r=_db.transaction('sessions','readonly').objectStore('sessions').index('subjectId').getAll(subjectId);
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+});
+const dbAllSessions = () => new Promise((res,rej)=>{
+  const r=_db.transaction('sessions','readonly').objectStore('sessions').getAll();
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+});
+// Exercises: {id, name, notes, createdAt}
+const dbAllExercises = () => dbAll('exercises');
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const pct = v => (v*100).toFixed(1)+'%';
@@ -1096,6 +1162,9 @@ function movementTab(movement, workId) {
   const aiBox=makeAiBox('mov:'+movement.id,
     ()=>generateSummary(movement,work?.title||'',composer?.name||'Unknown'));
 
+  const timerBlock=makeTimerBlock(movement.id,'movement',s=>{sessionLog.onSessionAdded(s);});
+  const sessionLog=makeSessionLog(movement.id,'movement');
+
   return div({className:'section-content'},
     div({style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'4px'}},
       div({},
@@ -1106,6 +1175,8 @@ function movementTab(movement, workId) {
     ),
     dateLbl ? div({style:{marginBottom:'14px'}},dateLbl) : div({style:{marginBottom:'14px'}}),
     pbarRow,
+    timerBlock,
+    sessionLog.el,
     notesToggle,
     notesContent,
     aiBox,
@@ -1179,7 +1250,140 @@ function makeAiBox(cacheKey, generateFn) {
   return box;
 }
 
-// ─── SUMMARY TAB ─────────────────────────────────────────────────────────────
+// ─── TIMER COMPONENT ─────────────────────────────────────────────────────────
+// subjectId: movementId or exerciseId, subjectType: 'movement'|'exercise'
+// onSessionSaved: callback after a session is saved to DB
+function makeTimerBlock(subjectId, subjectType, onSessionSaved) {
+  let worker=null, startTs=null, elapsed=0, running=false;
+  // Restore in-progress session from localStorage (survives app restart)
+  const lsKey='timer_'+subjectType+'_'+subjectId;
+  const saved=localStorage.getItem(lsKey);
+  if (saved) { try { const d=JSON.parse(saved); startTs=d.startTs; running=true; elapsed=Date.now()-startTs; } catch{} }
+
+  const display=div({className:'timer-display'}, fmtDuration(elapsed));
+  const startBtn=btn({className:'timer-btn timer-btn-start'}, 'Start');
+  const stopBtn=btn({className:'timer-btn timer-btn-stop',style:{display:'none'}}, 'Stop & Log');
+
+  function tick() {
+    if (!running||!startTs) return;
+    elapsed=Date.now()-startTs;
+    display.textContent=fmtDuration(elapsed);
+  }
+  function start() {
+    startTs=Date.now()-elapsed;
+    running=true;
+    localStorage.setItem(lsKey,JSON.stringify({startTs}));
+    startBtn.style.display='none'; stopBtn.style.display='';
+    worker=createTimerWorker(tick);
+    worker.postMessage('start');
+  }
+  function stop() {
+    if (worker){worker.postMessage('stop');URL.revokeObjectURL(worker._url);worker.terminate();worker=null;}
+    running=false;
+    localStorage.removeItem(lsKey);
+    startBtn.style.display=''; stopBtn.style.display='none';
+    const finalMs=elapsed;
+    elapsed=0; display.textContent=fmtDuration(0);
+    addSessionDialog(subjectId, subjectType, finalMs, onSessionSaved);
+  }
+  startBtn.addEventListener('click',start);
+  stopBtn.addEventListener('click',stop);
+  if (running) { startBtn.style.display='none'; stopBtn.style.display=''; worker=createTimerWorker(tick); worker.postMessage('start'); tick(); }
+
+  return div({className:'timer-block'}, display, startBtn, stopBtn);
+}
+
+// ─── ADD SESSION DIALOG ───────────────────────────────────────────────────────
+function addSessionDialog(subjectId, subjectType, defaultMs, onSaved) {
+  // Pre-fill duration in minutes
+  let mins=Math.max(1,Math.round(defaultMs/60000)).toString();
+  let note='';
+  let ts=Date.now();
+
+  const fMins=fieldEl('Duration (minutes)', mins, v=>mins=v, {type:'number',autoFocus:!defaultMs});
+  // Date/time picker
+  const dtStr=new Date(ts).toISOString().slice(0,16);
+  const dtInp=el('input',{type:'datetime-local',value:dtStr,
+    style:{fontSize:'14px',padding:'8px 10px',border:'1.5px solid #E4E3DE',borderRadius:'7px',background:'#fff',color:'#2E2E2E',outline:'none',width:'100%',fontFamily:'inherit'}});
+  dtInp.addEventListener('change',()=>ts=new Date(dtInp.value).getTime());
+  const ta=el('textarea',{placeholder:'Session note (optional)',rows:'2',
+    style:{fontSize:'14px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',background:'#fff',color:'#2E2E2E',outline:'none',width:'100%',resize:'none',lineHeight:'1.5',fontFamily:'inherit'}});
+  ta.addEventListener('input',()=>note=ta.value);
+  const err=span({className:'err',style:{display:'none'}});
+  const body=div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
+    fMins,
+    div({className:'field'},el('label',{},'Date & time'),dtInp),
+    div({className:'field'},el('label',{},'Note (optional)'),ta),
+    err
+  );
+  const foot=div({style:{display:'flex',gap:'8px'}},
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:async()=>{
+      const mVal=parseFloat(mins);
+      if(isNaN(mVal)||mVal<=0){err.textContent='Enter a valid duration';err.style.display='';return;}
+      const durationMs=Math.round(mVal*60000);
+      const id=await dbPut('sessions',{subjectId,subjectType,durationMs,timestamp:ts,note:note.trim()});
+      m.remove();
+      if(onSaved) onSaved({id,subjectId,subjectType,durationMs,timestamp:ts,note:note.trim()});
+    }},'Log session')
+  );
+  const m=modal('Log Practice Session',body,foot,()=>m.remove());
+}
+
+// ─── SESSION LOG COMPONENT ────────────────────────────────────────────────────
+function makeSessionLog(subjectId, subjectType) {
+  const container=div({style:{marginBottom:'18px'}});
+  let sessions=[];
+
+  function refresh() {
+    container.innerHTML='';
+    const header=div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+      span({className:'label'},'Practice log'),
+      btn({className:'btn',style:{padding:'2px 10px',fontSize:'13px'},onClick:()=>{
+        addSessionDialog(subjectId,subjectType,0,s=>{sessions.unshift(s);refresh();});
+      }},'+ Add')
+    );
+    container.appendChild(header);
+    if (!sessions.length) {
+      container.appendChild(para({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'8px'}},'No sessions logged yet.'));
+      return;
+    }
+    const totalMs=sessions.reduce((s,x)=>s+x.durationMs,0);
+    container.appendChild(div({style:{fontSize:'13px',color:'#6B6B6B',marginBottom:'8px'}},
+      'Total: '+fmtDurationLong(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':'')));
+    const listEl=div({style:{background:'#EFEEE9',borderRadius:'10px',padding:'0 12px'}});
+    for (const s of sessions) {
+      const d=new Date(s.timestamp);
+      const dateStr=d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+      const timeStr=d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+      const row=div({className:'session-row'},
+        div({style:{flex:'1'}},
+          div({style:{fontWeight:'bold',color:'#2E2E2E'}},fmtDurationLong(s.durationMs)),
+          div({style:{color:'#9E9E9E',fontSize:'12px'}},dateStr+' · '+timeStr+(s.note?' · '+s.note:''))
+        ),
+        btn({className:'btn-icon',style:{fontSize:'18px',color:'#BDBDBD'},onClick:async(e)=>{
+          e.stopPropagation();
+          if(!confirm('Delete this session?')) return;
+          await dbDel('sessions',s.id);
+          sessions=sessions.filter(x=>x.id!==s.id);
+          refresh();
+        }},'✕')
+      );
+      listEl.appendChild(row);
+    }
+    container.appendChild(listEl);
+  }
+
+  // Load async
+  dbSessionsBySubject(subjectId).then(ss=>{
+    sessions=ss.sort((a,b)=>b.timestamp-a.timestamp);
+    refresh();
+  });
+  refresh();
+  return {el:container, onSessionAdded:(s)=>{sessions.unshift(s);refresh();}};
+}
+
+
 function summaryTab(work, movements, setTab, isMulti) {
   const mastery=workMastery(work.id);
   const composer=IDX.composerById.get(work.composerId);
@@ -1442,22 +1646,296 @@ function renderHomeScreen() {
   buildList();
   screen.appendChild(header);
   screen.appendChild(list);
-  screen.appendChild(btn({className:'fab',onClick:()=>workDialog(null,async(comp,title)=>{
+  screen.appendChild(btn({className:'fab',style:{bottom:'80px'},onClick:()=>workDialog(null,async(comp,title)=>{
     const cId=await getOrCreateComposer(comp);
     const id=await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});
     applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Current',lastWorked:Date.now()}}],[id]);
   })},'+'));
+  screen.appendChild(bottomNav('home'));
   return screen;
 }
 
 // ─── RENDER / BOOT ───────────────────────────────────────────────────────────
+function bottomNav(active) {
+  const items=[
+    {id:'home',icon:'♩',label:'Repertoire'},
+    {id:'exercises',icon:'⌨',label:'Exercises'},
+    {id:'stats',icon:'◷',label:'Stats'},
+  ];
+  return div({className:'bottom-nav'},
+    ...items.map(item=>btn({
+      className:'nav-btn'+(active===item.id?' active':''),
+      onClick:()=>navigate({screen:item.id})
+    },
+      span({className:'nav-btn-icon'},item.icon),
+      span({className:'nav-btn-label'},item.label)
+    ))
+  );
+}
+
+// ─── EXERCISE DIALOG ─────────────────────────────────────────────────────────
+function exerciseDialog(existing, onSave, onDelete) {
+  let name=existing?.name||'', notes=existing?.notes||'';
+  const nameInp=inp({value:name,placeholder:'e.g. Hanon No. 1, Scales in C major',
+    style:{fontSize:'15px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',
+      background:'#fff',color:'#2E2E2E',outline:'none',width:'100%'}});
+  nameInp.addEventListener('input',()=>name=nameInp.value);
+  nameInp.addEventListener('focus',()=>nameInp.style.borderColor='#7B9E87');
+  nameInp.addEventListener('blur',()=>nameInp.style.borderColor='#E4E3DE');
+  const ta=el('textarea',{placeholder:'Notes (optional)',rows:'3',
+    style:{fontSize:'14px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',
+      background:'#fff',color:'#2E2E2E',outline:'none',width:'100%',resize:'none',
+      lineHeight:'1.5',fontFamily:'inherit'}});
+  ta.value=notes;
+  ta.addEventListener('input',()=>notes=ta.value);
+  ta.addEventListener('focus',()=>ta.style.borderColor='#7B9E87');
+  ta.addEventListener('blur',()=>ta.style.borderColor='#E4E3DE');
+  const err=span({style:{fontSize:'12px',color:'#BB5050',display:'none'}});
+  const body=div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
+    div({className:'field'},el('label',{},'Name'),nameInp),
+    div({className:'field'},el('label',{},'Notes'),ta),
+    err
+  );
+  const delBtn=existing?btn({className:'btn',style:{color:'#BB5050',marginRight:'auto'},
+    onClick:async()=>{
+      if(!confirm('Delete this exercise and all its sessions?')) return;
+      m.remove(); onDelete&&onDelete();
+    }},'Delete'):null;
+  const foot=div({style:{display:'flex',gap:'8px',alignItems:'center'}},
+    delBtn,
+    btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
+    btn({className:'btn-primary',onClick:()=>{
+      if(!name.trim()){err.textContent='Name required';err.style.display='';return;}
+      m.remove(); onSave(name.trim(),notes.trim());
+    }},existing?'Save':'Add')
+  );
+  const m=modal(existing?'Edit Exercise':'New Exercise',body,foot,()=>m.remove());
+  setTimeout(()=>nameInp.focus(),50);
+}
+
+// ─── EXERCISES SCREEN ────────────────────────────────────────────────────────
+function renderExercisesScreen() {
+  const screen=div({className:'screen'});
+  const topbar=div({className:'topbar'},
+    span({style:{fontSize:'19px',flex:'1',color:'#2E2E2E'}},'Exercises'),
+    btn({className:'btn-plus',onClick:()=>exerciseDialog(null,async(name,notes)=>{
+      const id=await dbPut('exercises',{name,notes,createdAt:Date.now()});
+      navigate({screen:'exercise',exerciseId:id});
+    })},'+')
+  );
+  screen.appendChild(topbar);
+  const list=div({className:'scroll'});
+  screen.appendChild(list);
+  screen.appendChild(bottomNav('exercises'));
+
+  dbAllExercises().then(exs=>{
+    list.innerHTML='';
+    if (!exs.length) {
+      list.appendChild(div({className:'empty'},para({},'No exercises yet.\nTap + to add one.')));
+      return;
+    }
+    exs.sort((a,b)=>a.name.localeCompare(b.name));
+    for (const ex of exs) {
+      list.appendChild(div({className:'ex-row',onClick:()=>navigate({screen:'exercise',exerciseId:ex.id})},
+        div({},
+          div({style:{fontSize:'16px',color:'#2E2E2E'}},ex.name),
+          ex.notes?div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:'240px'}},ex.notes):null
+        ),
+        span({style:{fontSize:'20px',color:'#BDBDBD'}},'\u203a')
+      ));
+    }
+  });
+  return screen;
+}
+
+// ─── EXERCISE DETAIL SCREEN ──────────────────────────────────────────────────
+function renderExerciseScreen() {
+  const {exerciseId}=NAV;
+  const screen=div({className:'screen'});
+
+  async function loadAndRender() {
+    const exs=await dbAllExercises();
+    const ex=exs.find(e=>e.id===exerciseId);
+    if (!ex){navigate({screen:'exercises'});return;}
+
+    screen.innerHTML='';
+    const topbar=div({className:'topbar'},
+      btn({className:'btn-back',onClick:()=>navigate({screen:'exercises'})},'\u2039'),
+      span({style:{fontSize:'18px',flex:'1',color:'#2E2E2E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},ex.name),
+      btn({className:'btn-icon',onClick:()=>exerciseDialog(ex,async(name,notes)=>{
+        await dbPut('exercises',{...ex,name,notes});
+        loadAndRender();
+      },async()=>{
+        // Delete exercise + sessions
+        const ss=await dbSessionsBySubject(exerciseId);
+        for(const s of ss) await dbDel('sessions',s.id);
+        await dbDel('exercises',exerciseId);
+        navigate({screen:'exercises'});
+      })},'\u22ef')
+    );
+
+    const timerBlock=makeTimerBlock(exerciseId,'exercise',s=>{sessionLog.onSessionAdded(s);});
+    const sessionLog=makeSessionLog(exerciseId,'exercise');
+
+    const notesContent=ex.notes?div({style:{background:'#EFEEE9',borderRadius:'9px',padding:'11px 13px',marginBottom:'18px',fontSize:'14px',color:'#4A4A4A',lineHeight:'1.6',whiteSpace:'pre-wrap'}},ex.notes):null;
+
+    const content=div({className:'section-content'},
+      timerBlock,
+      sessionLog.el,
+      notesContent
+    );
+
+    screen.appendChild(topbar);
+    screen.appendChild(content);
+    // No bottom nav — back button returns to exercises
+  }
+  loadAndRender();
+  return screen;
+}
+
+// ─── STATS HELPERS ────────────────────────────────────────────────────────────
+function getMondayOf(d) {
+  const day=new Date(d); day.setHours(0,0,0,0);
+  const dow=day.getDay(); // 0=Sun
+  const diff=(dow===0?-6:1-dow);
+  day.setDate(day.getDate()+diff);
+  return day;
+}
+function periodBounds(period, offset=0) {
+  const now=new Date();
+  if (period==='day') {
+    const d=new Date(now); d.setDate(d.getDate()-offset); d.setHours(0,0,0,0);
+    const e=new Date(d); e.setDate(d.getDate()+1);
+    return [d.getTime(),e.getTime(), fmtDateFull(d)];
+  }
+  if (period==='week') {
+    const mon=getMondayOf(now); mon.setDate(mon.getDate()-offset*7);
+    const sun=new Date(mon); sun.setDate(mon.getDate()+7);
+    const label=fmtDateFull(mon)+' – '+fmtDateFull(new Date(sun.getTime()-1));
+    return [mon.getTime(),sun.getTime(),label];
+  }
+  if (period==='month') {
+    const d=new Date(now.getFullYear(),now.getMonth()-offset,1);
+    const e=new Date(d.getFullYear(),d.getMonth()+1,1);
+    const label=d.toLocaleDateString('en-GB',{month:'long',year:'numeric'});
+    return [d.getTime(),e.getTime(),label];
+  }
+  if (period==='year') {
+    const y=now.getFullYear()-offset;
+    return [new Date(y,0,1).getTime(),new Date(y+1,0,1).getTime(),String(y)];
+  }
+}
+function fmtDateFull(d) {
+  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+}
+
+// ─── STATS SCREEN ────────────────────────────────────────────────────────────
+function renderStatsScreen() {
+  const screen=div({className:'screen'});
+  screen.appendChild(div({className:'topbar'},
+    span({style:{fontSize:'19px',flex:'1',color:'#2E2E2E'}},'Stats')
+  ));
+
+  const periods=['day','week','month','year'];
+  const periodLabels={day:'Day',week:'Week',month:'Month',year:'Year'};
+  let activePeriod='week', offset=0;
+
+  const periodBar=div({className:'stats-period-bar'});
+  const content=div({className:'scroll',style:{padding:'0 16px 32px'}});
+
+  function buildPeriodBar() {
+    periodBar.innerHTML='';
+    for (const p of periods) {
+      const b=btn({className:'pill'+(activePeriod===p?' active':''),onClick:()=>{activePeriod=p;offset=0;buildContent();}},periodLabels[p]);
+      periodBar.appendChild(b);
+    }
+  }
+
+  async function buildContent() {
+    buildPeriodBar();
+    content.innerHTML='';
+    const [start,end,label]=periodBounds(activePeriod,offset);
+    const allSessions=await dbAllSessions();
+    const inPeriod=allSessions.filter(s=>s.timestamp>=start&&s.timestamp<end);
+    const totalMs=inPeriod.reduce((s,x)=>s+x.durationMs,0);
+
+    // Nav row
+    content.appendChild(div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'4px 0 0'}},
+      btn({className:'btn',style:{padding:'4px 10px'},onClick:()=>{offset++;buildContent();}},'‹ Prev'),
+      span({style:{fontSize:'13px',color:'#6B6B6B',textAlign:'center',flex:'1'}},label),
+      offset>0?btn({className:'btn',style:{padding:'4px 10px'},onClick:()=>{offset--;buildContent();}},'Next ›'):div({style:{width:'80px'}})
+    ));
+
+    content.appendChild(div({className:'stats-big'},fmtDurationLong(totalMs)));
+    content.appendChild(div({className:'stats-big-label'},'Total practice time'));
+
+    if (!inPeriod.length) {
+      content.appendChild(para({style:{color:'#9E9E9E',fontSize:'14px',textAlign:'center',marginTop:'8px'}},'No sessions in this period.'));
+      return;
+    }
+
+    // Build breakdown by subject
+    const bySubject=new Map();
+    for (const s of inPeriod) {
+      if (!bySubject.has(s.subjectId)) bySubject.set(s.subjectId,{ms:0,type:s.subjectType,sessions:[]});
+      bySubject.get(s.subjectId).ms+=s.durationMs;
+      bySubject.get(s.subjectId).sessions.push(s);
+    }
+
+    // Load exercises for naming
+    const exs=await dbAllExercises();
+    const exById=new Map(exs.map(e=>[e.id,e]));
+
+    // Resolve names: movements use IDX, exercises use exById
+    const rows=[];
+    for (const [subjectId,data] of bySubject) {
+      let name='Unknown', subLabel='';
+      if (data.type==='movement') {
+        const mov=IDX.movById.get(subjectId);
+        const work=mov?IDX.workById.get(mov.workId):null;
+        const comp=work?IDX.composerById.get(work.composerId):null;
+        name=mov?.name||'Unknown movement';
+        subLabel=(work?.title||'')+(comp?' · '+comp.name:'');
+      } else {
+        const ex=exById.get(subjectId);
+        name=ex?.name||'Unknown exercise';
+        subLabel='Exercise';
+      }
+      rows.push({name,subLabel,ms:data.ms,count:data.sessions.length});
+    }
+    rows.sort((a,b)=>b.ms-a.ms);
+
+    content.appendChild(span({className:'label',style:{display:'block',marginTop:'18px',marginBottom:'8px'}},'Breakdown'));
+    const breakdown=div({style:{background:'#EFEEE9',borderRadius:'10px',padding:'0 14px'}});
+    for (const r of rows) {
+      breakdown.appendChild(div({className:'stats-breakdown-row'},
+        div({style:{flex:'1',minWidth:'0'}},
+          div({style:{fontSize:'14px',color:'#2E2E2E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.name),
+          r.subLabel?div({style:{fontSize:'12px',color:'#9E9E9E'}},(r.subLabel)+(r.count>1?' · '+r.count+' sessions':'')):null
+        ),
+        span({style:{fontSize:'14px',color:'#6B6B6B',flexShrink:'0',marginLeft:'12px'}},fmtDurationLong(r.ms))
+      ));
+    }
+    content.appendChild(breakdown);
+  }
+
+  buildContent();
+  screen.appendChild(periodBar);
+  screen.appendChild(content);
+  screen.appendChild(bottomNav('stats'));
+  return screen;
+}
+
 function render() {
   const app=document.getElementById('app');
   app.innerHTML='';
   let screen;
-  if      (NAV.screen==='home')     screen=renderHomeScreen();
-  else if (NAV.screen==='composer') screen=renderComposerScreen();
-  else if (NAV.screen==='work')     screen=renderWorkScreen();
+  if      (NAV.screen==='home')      screen=renderHomeScreen();
+  else if (NAV.screen==='composer')  screen=renderComposerScreen();
+  else if (NAV.screen==='work')      screen=renderWorkScreen();
+  else if (NAV.screen==='exercises') screen=renderExercisesScreen();
+  else if (NAV.screen==='exercise')  screen=renderExerciseScreen();
+  else if (NAV.screen==='stats')     screen=renderStatsScreen();
   if (screen) app.appendChild(screen);
 }
 (async()=>{
