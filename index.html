@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
-<meta name="theme-color" content="#7B9E87"/>
+<meta name="theme-color" content="#F5F4F0" id="theme-color-meta"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-title" content="Repertoire"/>
 <title>Repertoire</title>
@@ -1715,6 +1715,7 @@ function renderHomeScreen() {
       onClick:()=>{
         const going=document.body.classList.toggle('theme-sans');
         localStorage.setItem('repertoire_theme', going?'sans':'serif');
+        document.getElementById('theme-color-meta').content = going ? '#F7F8FA' : '#F5F4F0';
         buildHeader();
       }},
       isSans?'𝒜':'A');
@@ -2056,7 +2057,7 @@ function renderStatsScreen() {
         const wMon=cur.getTime();
         const wSun=wMon+7*86400000; // exclusive end (Monday of next week)
         const wMonD=new Date(wMon);
-        const wSunD=new Date(wSun-1); // Sunday 23:59:59
+        const wSunD=new Date(wMon+6*86400000); // Sunday = Monday + 6 days (unambiguous)
         const label=fmtDateFull(wMonD)+' – '+fmtDateFull(wSunD);
         // Use full week bounds (not clipped to month) so date comparisons don't overlap
         buckets.push({label,start:wMon,end:wSun});
@@ -2183,7 +2184,10 @@ function render() {
 }
 (async()=>{
   // Apply stored theme immediately
-  if (localStorage.getItem('repertoire_theme')==='sans') document.body.classList.add('theme-sans');
+  if (localStorage.getItem('repertoire_theme')==='sans') {
+    document.body.classList.add('theme-sans');
+    document.getElementById('theme-color-meta').content = '#F7F8FA';
+  }
   document.getElementById('app').innerHTML='<div style="height:100dvh;display:flex;align-items:center;justify-content:center;color:#9E9E9E;">Loading\u2026</div>';
   await reload();
 })();
