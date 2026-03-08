@@ -675,7 +675,7 @@ function apiKeyModal() {
     style:{fontSize:'15px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',
       background:'#fff',color:'#2E2E2E',outline:'none',width:'100%',fontFamily:'inherit'}});
   inp2.addEventListener('input',()=>val=inp2.value);
-  inp2.addEventListener('focus',()=>inp2.style.borderColor='#7B9E87');
+  inp2.addEventListener('focus',()=>inp2.style.borderColor='var(--accent)');
   inp2.addEventListener('blur',()=>inp2.style.borderColor='#E4E3DE');
   const body=div({style:{display:'flex',flexDirection:'column',gap:'12px',paddingBottom:'8px'}},
     para({style:{fontSize:'13px',color:'#6B6B6B',lineHeight:'1.6'}},'Get a key at console.anthropic.com. It\'s stored only on this device.'),
@@ -799,7 +799,7 @@ function movementDialog(initial, onSave, onDelete) {
       color:'#2E2E2E',outline:'none',width:'100%',resize:'vertical',lineHeight:'1.5',fontFamily:'inherit'}});
   ta.value = notes;
   ta.addEventListener('input',()=>notes=ta.value);
-  ta.addEventListener('focus',()=>ta.style.borderColor='#7B9E87');
+  ta.addEventListener('focus',()=>ta.style.borderColor='var(--accent)');
   ta.addEventListener('blur', ()=>ta.style.borderColor='#E4E3DE');
   const fNotes = div({className:'field'},
     el('label',{},'Notes (optional)'),
@@ -1861,7 +1861,7 @@ function exerciseDialog(existing, onSave, onDelete) {
     style:{fontSize:'15px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',
       background:'#fff',color:'#2E2E2E',outline:'none',width:'100%'}});
   nameInp.addEventListener('input',()=>name=nameInp.value);
-  nameInp.addEventListener('focus',()=>nameInp.style.borderColor='#7B9E87');
+  nameInp.addEventListener('focus',()=>nameInp.style.borderColor='var(--accent)');
   nameInp.addEventListener('blur',()=>nameInp.style.borderColor='#E4E3DE');
   const ta=el('textarea',{placeholder:'Notes (optional)',rows:'3',
     style:{fontSize:'14px',padding:'9px 12px',border:'1.5px solid #E4E3DE',borderRadius:'7px',
@@ -1869,7 +1869,7 @@ function exerciseDialog(existing, onSave, onDelete) {
       lineHeight:'1.5',fontFamily:'inherit'}});
   ta.value=notes;
   ta.addEventListener('input',()=>notes=ta.value);
-  ta.addEventListener('focus',()=>ta.style.borderColor='#7B9E87');
+  ta.addEventListener('focus',()=>ta.style.borderColor='var(--accent)');
   ta.addEventListener('blur',()=>ta.style.borderColor='#E4E3DE');
   const err=span({style:{fontSize:'12px',color:'#BB5050',display:'none'}});
   const body=div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
