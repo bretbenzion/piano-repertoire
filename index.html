@@ -501,7 +501,10 @@ async function getOrCreateComposer(name) {
 // ─── EXPORT / IMPORT ─────────────────────────────────────────────────────────
 async function exportJSON() {
   const data = await loadAll();
-  const blob = new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),...data},null,2)],{type:'application/json'});
+  const [exercises, sessions, dailyTotals, summaries] = await Promise.all([
+    dbAll('exercises'), dbAll('sessions'), dbAll('dailyTotals'), dbAll('summaries')
+  ]);
+  const blob = new Blob([JSON.stringify({version:2,exportedAt:new Date().toISOString(),...data,exercises,sessions,dailyTotals,summaries},null,2)],{type:'application/json'});
   dl(blob,'repertoire-'+today()+'.json');
 }
 async function exportCSV() {
@@ -524,16 +527,33 @@ async function exportCSV() {
 }
 async function importJSON(text) {
   let p; try{p=JSON.parse(text);}catch{throw new Error('Invalid JSON');}
-  const {composers,works,movements,sections}=p;
+  const {composers,works,movements,sections,exercises,sessions,dailyTotals,summaries}=p;
   if(!composers||!works||!movements||!sections) throw new Error('Missing data');
   await openDB();
-  for(const store of ['sections','movements','works','composers']){
+  // Clear all stores
+  for(const store of ['sections','movements','works','composers','exercises','sessions','dailyTotals','summaries']){
     const all=await dbAll(store); for(const i of all) await dbDel(store,i.id);
   }
-  for(const i of composers) await dbPut('composers',i);
-  for(const i of works)     await dbPut('works',i);
-  for(const i of movements) await dbPut('movements',i);
-  for(const i of sections)  await dbPut('sections',i);
+  for(const i of composers)   await dbPut('composers',i);
+  for(const i of works)       await dbPut('works',i);
+  for(const i of movements)   await dbPut('movements',i);
+  for(const i of sections)    await dbPut('sections',i);
+  // v2+ fields — gracefully skip if importing an older backup
+  if(exercises)    for(const i of exercises)    await dbPut('exercises',i);
+  if(sessions)     for(const i of sessions)     await dbPut('sessions',i);
+  if(dailyTotals)  for(const i of dailyTotals)  await dbPut('dailyTotals',i);
+  if(summaries)    for(const i of summaries)     await dbPut('summaries',i);
+  // If importing a v1 backup (no dailyTotals), rebuild them from sessions
+  if(sessions && !dailyTotals) {
+    const acc=new Map();
+    for(const s of sessions){
+      const date=localDateStr(s.timestamp);
+      const key=date+':'+s.subjectId;
+      if(!acc.has(key)) acc.set(key,{id:key,date,subjectId:s.subjectId,subjectType:s.subjectType,durationMs:0});
+      acc.get(key).durationMs+=s.durationMs;
+    }
+    for(const rec of acc.values()) await dbPut('dailyTotals',rec);
+  }
 }
 const today=()=>localDateStr(Date.now());
 function dl(blob,name){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
