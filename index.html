@@ -83,6 +83,9 @@ button{cursor:pointer}
 .ai-box-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .ai-section-title{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#5B6FA8;text-transform:uppercase;margin-top:10px;margin-bottom:3px}
 .date-label{font-size:11px;color:#BDBDBD}
+.search-bar{display:flex;align-items:center;gap:8px;padding:8px 16px 10px;border-bottom:1px solid #E4E3DE;flex-shrink:0;background:#F5F4F0}
+.search-inp{flex:1;font-size:15px;padding:8px 12px;border:1.5px solid #E4E3DE;border-radius:8px;background:#fff;color:#2E2E2E;outline:none;font-family:inherit}
+.search-inp:focus{border-color:#7B9E87}
 .timer-block{background:#EFEEE9;border-radius:12px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:12px}
 .timer-display{font-size:28px;font-variant-numeric:tabular-nums;color:#2E2E2E;letter-spacing:1px;flex:1}
 .timer-btn{border:none;border-radius:8px;padding:8px 16px;font-size:14px;font-family:inherit;cursor:pointer}
@@ -152,11 +155,12 @@ function fmtDuration(ms) {
 }
 
 function fmtDurationLong(ms) {
-  if (!ms||ms<0) return '0 min';
-  const totalMin=Math.round(ms/60000);
-  if (totalMin<60) return totalMin+' min';
-  const h=Math.floor(totalMin/60), m=totalMin%60;
-  return h+'h'+(m>0?' '+m+'m':'');
+  if (!ms||ms<0) return '0s';
+  const totalSec=Math.round(ms/1000);
+  const h=Math.floor(totalSec/3600), m=Math.floor((totalSec%3600)/60), s=totalSec%60;
+  if (h>0) return h+'h '+(m>0?m+'m ':'')+(s>0?s+'s':'');
+  if (m>0) return m+'m'+(s>0?' '+s+'s':'');
+  return s+'s';
 }
 const getApiKey = () => localStorage.getItem('repertoire_api_key')||'';
 const setApiKey = v => localStorage.setItem('repertoire_api_key', v);
@@ -190,9 +194,10 @@ let _db = null;
 function openDB() {
   if (_db) return Promise.resolve(_db);
   return new Promise((res,rej) => {
-    const r = indexedDB.open('piano_repertoire',3);
+    const r = indexedDB.open('piano_repertoire',4);
     r.onupgradeneeded = e => {
       const db = e.target.result;
+      const tx = e.target.transaction; // use existing upgrade transaction
       const mk = (n,idx) => {
         if (!db.objectStoreNames.contains(n)) {
           const s = db.createObjectStore(n,{keyPath:'id',autoIncrement:true});
@@ -204,10 +209,32 @@ function openDB() {
         db.createObjectStore('summaries',{keyPath:'id'});
       if (!db.objectStoreNames.contains('sessions')) {
         const ss=db.createObjectStore('sessions',{keyPath:'id',autoIncrement:true});
-        ss.createIndex('subjectId','subjectId'); // movementId or exerciseId
+        ss.createIndex('subjectId','subjectId');
       }
       if (!db.objectStoreNames.contains('exercises'))
         db.createObjectStore('exercises',{keyPath:'id',autoIncrement:true});
+      // v4: dailyTotals — pre-aggregated per (date, subjectId) for O(1) stats
+      // key: "YYYY-MM-DD:subjectId", value: {id, date, subjectId, subjectType, durationMs}
+      if (!db.objectStoreNames.contains('dailyTotals')) {
+        const dt=db.createObjectStore('dailyTotals',{keyPath:'id'}); // id = date+':'+subjectId
+        dt.createIndex('date','date');
+      }
+      // Backfill dailyTotals from existing sessions on upgrade
+      if (e.oldVersion < 4 && db.objectStoreNames.contains('sessions')) {
+        const sesStore=tx.objectStore('sessions');
+        const dtStore=tx.objectStore('dailyTotals');
+        sesStore.getAll().onsuccess=ev=>{
+          const sessions=ev.target.result||[];
+          const acc=new Map();
+          for (const s of sessions) {
+            const date=new Date(s.timestamp).toISOString().slice(0,10);
+            const key=date+':'+s.subjectId;
+            if (!acc.has(key)) acc.set(key,{id:key,date,subjectId:s.subjectId,subjectType:s.subjectType,durationMs:0});
+            acc.get(key).durationMs+=s.durationMs;
+          }
+          for (const rec of acc.values()) dtStore.put(rec);
+        };
+      }
     };
     r.onsuccess = e => { _db = e.target.result; res(_db); };
     r.onerror   = () => rej(r.error);
@@ -238,10 +265,40 @@ const dbSessionsBySubject = (subjectId) => new Promise((res,rej)=>{
   const r=_db.transaction('sessions','readonly').objectStore('sessions').index('subjectId').getAll(subjectId);
   r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
 });
-const dbAllSessions = () => new Promise((res,rej)=>{
-  const r=_db.transaction('sessions','readonly').objectStore('sessions').getAll();
+// dailyTotals: {id:"YYYY-MM-DD:subjectId", date, subjectId, subjectType, durationMs}
+function dtKey(date, subjectId) { return date+':'+subjectId; }
+const dbDailyTotalsByDate = (date) => new Promise((res,rej)=>{
+  const r=_db.transaction('dailyTotals','readonly').objectStore('dailyTotals').index('date').getAll(date);
   r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
 });
+const dbDailyTotalsRange = (startDate, endDate) => new Promise((res,rej)=>{
+  // Fetch all dailyTotals where date >= startDate and date < endDate (string compare works for ISO dates)
+  const range=IDBKeyRange.bound(startDate, endDate, false, true);
+  const r=_db.transaction('dailyTotals','readonly').objectStore('dailyTotals').index('date').getAll(range);
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+});
+async function upsertDailyTotal(date, subjectId, subjectType, deltaMs) {
+  const key=dtKey(date,subjectId);
+  const existing=await new Promise((res)=>{
+    const r=_db.transaction('dailyTotals','readonly').objectStore('dailyTotals').get(key);
+    r.onsuccess=()=>res(r.result||null); r.onerror=()=>res(null);
+  });
+  const rec={id:key,date,subjectId,subjectType,durationMs:(existing?.durationMs||0)+deltaMs};
+  await dbPut('dailyTotals',rec);
+  return rec;
+}
+async function recomputeDailyTotal(date, subjectId, subjectType) {
+  // Re-sum all raw sessions for this subject on this date — called after delete
+  const sessions=await dbSessionsBySubject(subjectId);
+  const dayMs=sessions.filter(s=>new Date(s.timestamp).toISOString().slice(0,10)===date)
+    .reduce((sum,s)=>sum+s.durationMs,0);
+  const key=dtKey(date,subjectId);
+  if (dayMs===0) {
+    await dbDel('dailyTotals',key);
+  } else {
+    await dbPut('dailyTotals',{id:key,date,subjectId,subjectType,durationMs:dayMs});
+  }
+}
 // Exercises: {id, name, notes, createdAt}
 const dbAllExercises = () => dbAll('exercises');
 
@@ -1143,8 +1200,8 @@ function movementTab(movement, workId) {
     reorderBtns, editBtn, extractBtn);
 
   // ── Date label ──
-  const dateStr = fmtDate(work?.lastWorked);
-  const dateLbl = dateStr ? span({className:'date-label'}, 'Updated ' + dateStr) : null;
+  const dateStr = fmtDate(movement.lastWorked||work?.lastWorked);
+  const dateLbl = dateStr ? span({className:'date-label'}, (movement.lastWorked?'Practiced ':'Updated ') + dateStr) : null;
 
   // ── Notes block with toggle ──
   let notesVisible = false;
@@ -1175,8 +1232,6 @@ function movementTab(movement, workId) {
     ),
     dateLbl ? div({style:{marginBottom:'14px'}},dateLbl) : div({style:{marginBottom:'14px'}}),
     pbarRow,
-    timerBlock,
-    sessionLog.el,
     notesToggle,
     notesContent,
     aiBox,
@@ -1193,7 +1248,10 @@ function movementTab(movement, workId) {
         })},'+ Add')
     ),
     mySections.length===0 ? para({style:{fontSize:'14px',color:'#9E9E9E'}},'No sections yet. Add one to track your progress.') : null,
-    ...mySections.map((s,i)=>sectionRow(s,i,mySections,movement,workId))
+    ...mySections.map((s,i)=>sectionRow(s,i,mySections,movement,workId)),
+    div({style:{marginTop:'24px',borderTop:'1px solid #E4E3DE',paddingTop:'18px'}}),
+    timerBlock,
+    sessionLog.el
   );
 }
 
@@ -1295,12 +1353,12 @@ function makeTimerBlock(subjectId, subjectType, onSessionSaved) {
 
 // ─── ADD SESSION DIALOG ───────────────────────────────────────────────────────
 function addSessionDialog(subjectId, subjectType, defaultMs, onSaved) {
-  // Pre-fill duration in minutes
-  let mins=Math.max(1,Math.round(defaultMs/60000)).toString();
+  // Pre-fill duration in seconds
+  let secs=Math.max(1,Math.round(defaultMs/1000)).toString();
   let note='';
   let ts=Date.now();
 
-  const fMins=fieldEl('Duration (minutes)', mins, v=>mins=v, {type:'number',autoFocus:!defaultMs});
+  const fSecs=fieldEl('Duration (seconds)', secs, v=>secs=v, {type:'number',autoFocus:!defaultMs});
   // Date/time picker
   const dtStr=new Date(ts).toISOString().slice(0,16);
   const dtInp=el('input',{type:'datetime-local',value:dtStr,
@@ -1311,7 +1369,7 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved) {
   ta.addEventListener('input',()=>note=ta.value);
   const err=span({className:'err',style:{display:'none'}});
   const body=div({style:{display:'flex',flexDirection:'column',gap:'12px'}},
-    fMins,
+    fSecs,
     div({className:'field'},el('label',{},'Date & time'),dtInp),
     div({className:'field'},el('label',{},'Note (optional)'),ta),
     err
@@ -1319,10 +1377,21 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved) {
   const foot=div({style:{display:'flex',gap:'8px'}},
     btn({className:'btn',onClick:()=>m.remove()},'Cancel'),
     btn({className:'btn-primary',onClick:async()=>{
-      const mVal=parseFloat(mins);
-      if(isNaN(mVal)||mVal<=0){err.textContent='Enter a valid duration';err.style.display='';return;}
-      const durationMs=Math.round(mVal*60000);
+      const sVal=parseFloat(secs);
+      if(isNaN(sVal)||sVal<=0){err.textContent='Enter a valid duration';err.style.display='';return;}
+      const durationMs=Math.round(sVal*1000);
       const id=await dbPut('sessions',{subjectId,subjectType,durationMs,timestamp:ts,note:note.trim()});
+      const date=new Date(ts).toISOString().slice(0,10);
+      await upsertDailyTotal(date,subjectId,subjectType,durationMs);
+      // Update movement.lastWorked if this is a movement session
+      if (subjectType==='movement') {
+        const mov=IDX.movById.get(subjectId);
+        if (mov) {
+          const updMov={...mov,lastWorked:ts};
+          await dbPut('movements',updMov);
+          applyMutations([{type:'put',store:'movements',record:updMov}]);
+        }
+      }
       m.remove();
       if(onSaved) onSaved({id,subjectId,subjectType,durationMs,timestamp:ts,note:note.trim()});
     }},'Log session')
@@ -1364,7 +1433,9 @@ function makeSessionLog(subjectId, subjectType) {
         btn({className:'btn-icon',style:{fontSize:'18px',color:'#BDBDBD'},onClick:async(e)=>{
           e.stopPropagation();
           if(!confirm('Delete this session?')) return;
+          const date=new Date(s.timestamp).toISOString().slice(0,10);
           await dbDel('sessions',s.id);
+          await recomputeDailyTotal(date,s.subjectId,s.subjectType);
           sessions=sessions.filter(x=>x.id!==s.id);
           refresh();
         }},'✕')
@@ -1394,9 +1465,22 @@ function summaryTab(work, movements, setTab, isMulti) {
   const workAiBox=makeAiBox('work:'+work.id,
     ()=>generateWorkSummary(work,movements,composer?.name||'Unknown'));
 
+  // Total practice time across all movements (loaded async)
+  const practiceTotalEl=div({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'16px'}});
+  const allMovIds=movements.map(m=>m.id);
+  Promise.all(allMovIds.map(id=>dbSessionsBySubject(id))).then(results=>{
+    const allSessions=results.flat();
+    const totalMs=allSessions.reduce((s,x)=>s+x.durationMs,0);
+    if (totalMs>0) {
+      practiceTotalEl.textContent='Total practice time: '+fmtDurationLong(totalMs)+
+        ' across '+allSessions.length+' session'+(allSessions.length!==1?'s':'');
+    }
+  });
+
   const content=div({style:{padding:'16px 16px 32px',overflowY:'auto',flex:'1'}},
     span({className:'label',style:{display:'block',marginBottom:'8px'}},'Overall Progress'),
     pbarRow,
+    practiceTotalEl,
     workAiBox,
     span({className:'label',style:{display:'block',marginBottom:'10px'}},'Movements')
   );
@@ -1412,7 +1496,7 @@ function summaryTab(work, movements, setTab, isMulti) {
       progressBar(m.totalMeasures,secs),
       div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},
         m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm +
-        (work.lastWorked ? ' \u00b7 ' + fmtDate(work.lastWorked) : '')
+        (m.lastWorked ? ' \u00b7 ' + fmtDate(m.lastWorked) : (work.lastWorked ? ' \u00b7 ' + fmtDate(work.lastWorked) : ''))
       )
     ));
   }
@@ -1573,9 +1657,16 @@ function renderComposerScreen() {
 
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 function renderHomeScreen() {
-  let sortMode='composer', filterTag='All';
+  let sortMode='composer', filterTag='All', searchQuery='';
   const screen=div({className:'screen'});
   const header=div({style:{padding:'16px 16px 12px',borderBottom:'1px solid #E4E3DE',flexShrink:'0'}});
+
+  // Search bar — always visible
+  const searchInp=el('input',{type:'search',placeholder:'Search works & composers…',className:'search-inp'});
+  searchInp.addEventListener('input',()=>{searchQuery=searchInp.value.trim().toLowerCase();buildList();});
+  const clearBtn=btn({className:'btn',style:{padding:'4px 8px',fontSize:'13px',color:'#9E9E9E',display:'none'},onClick:()=>{searchInp.value='';searchQuery='';buildList();}}, '✕');
+  searchInp.addEventListener('input',()=>{ clearBtn.style.display=searchInp.value?'':'none'; });
+  const searchBar=div({className:'search-bar'},searchInp,clearBtn);
 
   function buildHeader() {
     header.innerHTML='';
@@ -1603,14 +1694,46 @@ function renderHomeScreen() {
   function buildList() {
     buildHeader();
     list.innerHTML='';
-    const filtered=filterTag==='All'?STATE.works:STATE.works.filter(w=>w.tag===filterTag);
+    // Tag filter
+    const tagFiltered=filterTag==='All'?STATE.works:STATE.works.filter(w=>w.tag===filterTag);
+
+    // Search mode — flat list matching title or composer name
+    if (searchQuery) {
+      const q=searchQuery;
+      const matches=tagFiltered.filter(w=>{
+        const comp=IDX.composerById.get(w.composerId);
+        return w.title.toLowerCase().includes(q)||(comp?.name||'').toLowerCase().includes(q);
+      }).sort((a,b)=>a.title.localeCompare(b.title));
+      if (!matches.length) {
+        list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No results.')));
+        return;
+      }
+      for (const w of matches) {
+        const comp=IDX.composerById.get(w.composerId);
+        const mastery=workMastery(w.id);
+        const movCount=(IDX.movsByWork.get(w.id)||[]).length;
+        list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||''})},
+          div({style:{flex:'1'}},
+            div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
+            div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
+            div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
+              tagChip(w.tag),
+              w.lastWorked?span({className:'date-label'},fmtDate(w.lastWorked)):null
+            )
+          ),
+          movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
+        ));
+      }
+      return;
+    }
+
     if (!STATE.works.length){
       list.appendChild(div({className:'empty'},para({},'No repertoire yet.\nTap + to add your first piece.')));
       return;
     }
     if (sortMode==='composer') {
       const groups=STATE.composers.slice().sort((a,b)=>a.name.localeCompare(b.name))
-        .map(c=>({composer:c,works:filtered.filter(w=>w.composerId===c.id)}))
+        .map(c=>({composer:c,works:tagFiltered.filter(w=>w.composerId===c.id)}))
         .filter(g=>g.works.length>0);
       if (!groups.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
       for (const {composer,works:cWorks} of groups) {
@@ -1622,7 +1745,7 @@ function renderHomeScreen() {
         ));
       }
     } else {
-      const recent=[...filtered].sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
+      const recent=[...tagFiltered].sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
       if (!recent.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
       for (const w of recent) {
         const comp=IDX.composerById.get(w.composerId);
@@ -1645,6 +1768,7 @@ function renderHomeScreen() {
 
   buildList();
   screen.appendChild(header);
+  screen.appendChild(searchBar);
   screen.appendChild(list);
   screen.appendChild(btn({className:'fab',style:{bottom:'80px'},onClick:()=>workDialog(null,async(comp,title)=>{
     const cId=await getOrCreateComposer(comp);
@@ -1658,17 +1782,16 @@ function renderHomeScreen() {
 // ─── RENDER / BOOT ───────────────────────────────────────────────────────────
 function bottomNav(active) {
   const items=[
-    {id:'home',icon:'♩',label:'Repertoire'},
-    {id:'exercises',icon:'⌨',label:'Exercises'},
-    {id:'stats',icon:'◷',label:'Stats'},
+    {id:'home',label:'Repertoire'},
+    {id:'exercises',label:'Exercises'},
+    {id:'stats',label:'Stats'},
   ];
   return div({className:'bottom-nav'},
     ...items.map(item=>btn({
       className:'nav-btn'+(active===item.id?' active':''),
       onClick:()=>navigate({screen:item.id})
     },
-      span({className:'nav-btn-icon'},item.icon),
-      span({className:'nav-btn-label'},item.label)
+      span({className:'nav-btn-label',style:{fontSize:'13px',padding:'4px 0'}},item.label)
     ))
   );
 }
@@ -1851,13 +1974,55 @@ function renderStatsScreen() {
     }
   }
 
+  // Returns array of {label, start, end} sub-buckets for a period
+  function getSubBuckets(period, start, end) {
+    const buckets=[];
+    if (period==='week') {
+      // Each day Mon–Sun
+      const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+      let cur=new Date(start);
+      for (let i=0;i<7;i++) {
+        const s=cur.getTime();
+        const next=new Date(cur); next.setDate(cur.getDate()+1);
+        const label=days[i]+' '+cur.getDate()+' '+cur.toLocaleDateString('en-GB',{month:'short'});
+        buckets.push({label,start:s,end:next.getTime()});
+        cur=next;
+      }
+    } else if (period==='month') {
+      // Each week (Mon–Sun) that overlaps the month
+      let cur=getMondayOf(new Date(start));
+      while (cur.getTime()<end) {
+        const wStart=Math.max(cur.getTime(),start);
+        const wEnd=Math.min(cur.getTime()+7*86400000,end);
+        const wStartD=new Date(wStart), wEndD=new Date(wEnd-1);
+        const label=fmtDateFull(wStartD)+' – '+fmtDateFull(wEndD);
+        buckets.push({label,start:wStart,end:wEnd});
+        cur=new Date(cur.getTime()+7*86400000);
+      }
+    } else if (period==='year') {
+      // Each calendar month
+      const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const startD=new Date(start);
+      const y=startD.getFullYear();
+      for (let mo=0;mo<12;mo++) {
+        const s=new Date(y,mo,1).getTime();
+        const e=new Date(y,mo+1,1).getTime();
+        buckets.push({label:months[mo],start:s,end:e});
+      }
+    }
+    return buckets;
+  }
+
   async function buildContent() {
     buildPeriodBar();
     content.innerHTML='';
     const [start,end,label]=periodBounds(activePeriod,offset);
-    const allSessions=await dbAllSessions();
-    const inPeriod=allSessions.filter(s=>s.timestamp>=start&&s.timestamp<end);
-    const totalMs=inPeriod.reduce((s,x)=>s+x.durationMs,0);
+    // Convert ms bounds to ISO date strings for the range index query
+    const startDate=new Date(start).toISOString().slice(0,10);
+    const endDate=new Date(end-1).toISOString().slice(0,10); // inclusive end date
+    // Fetch only aggregated daily rows in range — O(days) not O(sessions)
+    const dailyRows=await dbDailyTotalsRange(startDate, new Date(end).toISOString().slice(0,10));
+    const totalMs=dailyRows.reduce((s,x)=>s+x.durationMs,0);
 
     // Nav row
     content.appendChild(div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',margin:'4px 0 0'}},
@@ -1869,24 +2034,39 @@ function renderStatsScreen() {
     content.appendChild(div({className:'stats-big'},fmtDurationLong(totalMs)));
     content.appendChild(div({className:'stats-big-label'},'Total practice time'));
 
-    if (!inPeriod.length) {
+    if (!dailyRows.length) {
       content.appendChild(para({style:{color:'#9E9E9E',fontSize:'14px',textAlign:'center',marginTop:'8px'}},'No sessions in this period.'));
       return;
     }
 
-    // Build breakdown by subject
-    const bySubject=new Map();
-    for (const s of inPeriod) {
-      if (!bySubject.has(s.subjectId)) bySubject.set(s.subjectId,{ms:0,type:s.subjectType,sessions:[]});
-      bySubject.get(s.subjectId).ms+=s.durationMs;
-      bySubject.get(s.subjectId).sessions.push(s);
+    // Sub-period breakdown (week→days, month→weeks, year→months)
+    // dailyRows have .date (YYYY-MM-DD), so bucket membership is a string comparison
+    if (activePeriod!=='day') {
+      const buckets=getSubBuckets(activePeriod,start,end);
+      content.appendChild(span({className:'label',style:{display:'block',marginTop:'18px',marginBottom:'8px'}},
+        activePeriod==='week'?'By Day':activePeriod==='month'?'By Week':'By Month'));
+      const grid=div({style:{background:'#EFEEE9',borderRadius:'10px',padding:'0 14px'}});
+      for (const b of buckets) {
+        const bStartDate=new Date(b.start).toISOString().slice(0,10);
+        const bEndDate=new Date(b.end).toISOString().slice(0,10);
+        const bMs=dailyRows.filter(r=>r.date>=bStartDate&&r.date<bEndDate).reduce((s,x)=>s+x.durationMs,0);
+        grid.appendChild(div({className:'stats-breakdown-row'},
+          span({style:{fontSize:'14px',color:bMs>0?'#2E2E2E':'#BDBDBD'}},b.label),
+          span({style:{fontSize:'14px',color:bMs>0?'#6B6B6B':'#BDBDBD',flexShrink:'0',marginLeft:'12px'}},bMs>0?fmtDurationLong(bMs):'—')
+        ));
+      }
+      content.appendChild(grid);
     }
 
-    // Load exercises for naming
+    // Breakdown by subject — aggregate dailyRows by subjectId
+    const bySubject=new Map();
+    for (const r of dailyRows) {
+      if (!bySubject.has(r.subjectId)) bySubject.set(r.subjectId,{ms:0,type:r.subjectType,days:0});
+      bySubject.get(r.subjectId).ms+=r.durationMs;
+      bySubject.get(r.subjectId).days++;
+    }
     const exs=await dbAllExercises();
     const exById=new Map(exs.map(e=>[e.id,e]));
-
-    // Resolve names: movements use IDX, exercises use exById
     const rows=[];
     for (const [subjectId,data] of bySubject) {
       let name='Unknown', subLabel='';
@@ -1901,7 +2081,7 @@ function renderStatsScreen() {
         name=ex?.name||'Unknown exercise';
         subLabel='Exercise';
       }
-      rows.push({name,subLabel,ms:data.ms,count:data.sessions.length});
+      rows.push({name,subLabel,ms:data.ms,days:data.days});
     }
     rows.sort((a,b)=>b.ms-a.ms);
 
@@ -1911,7 +2091,7 @@ function renderStatsScreen() {
       breakdown.appendChild(div({className:'stats-breakdown-row'},
         div({style:{flex:'1',minWidth:'0'}},
           div({style:{fontSize:'14px',color:'#2E2E2E',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.name),
-          r.subLabel?div({style:{fontSize:'12px',color:'#9E9E9E'}},(r.subLabel)+(r.count>1?' · '+r.count+' sessions':'')):null
+          r.subLabel?div({style:{fontSize:'12px',color:'#9E9E9E'}},(r.subLabel)+(r.days>1?' · '+r.days+' days':'')):null
         ),
         span({style:{fontSize:'14px',color:'#6B6B6B',flexShrink:'0',marginLeft:'12px'}},fmtDurationLong(r.ms))
       ));
