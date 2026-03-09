@@ -98,8 +98,6 @@ button{cursor:pointer}
 .ai-box-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .ai-section-title{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#5B6FA8;text-transform:uppercase;margin-top:10px;margin-bottom:3px}
 .date-label{font-size:11px;color:#BDBDBD}
-.grade-tooltip{position:fixed;z-index:2000;background:#1A1A1A;color:#fff;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.5;max-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .15s}
-.grade-tooltip.visible{opacity:1}
 /* Search — icon shows inline in topbar; bar slides open */
 .search-wrap{display:flex;align-items:center;gap:6px;overflow:hidden;transition:width .2s}
 .search-inp{font-size:15px;padding:6px 10px;border:1.5px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);outline:none;font-family:inherit;width:180px}
@@ -601,45 +599,27 @@ function tagChip(tag) {
   const color = TAG_COLOR[tag]||'#9E9E9E';
   return span({className:'chip', style:{color,background:color+'22'}}, tag);
 }
-// Singleton tooltip element
-let _tooltip = null;
-function getTooltip() {
-  if (!_tooltip) {
-    _tooltip = div({className:'grade-tooltip'});
-    document.body.appendChild(_tooltip);
-  }
-  return _tooltip;
+function gradeInfoModal() {
+  const rows = GRADES.map(g => {
+    const badge = div({className:'grade-badge', style:{background:GRADE_COLOR[g]||'#9E9E9E',flexShrink:'0'}}, g);
+    return div({style:{display:'flex',gap:'12px',alignItems:'flex-start',padding:'10px 0',borderBottom:'1px solid var(--border)'}},
+      badge,
+      div({style:{fontSize:'13px',color:'var(--text)',lineHeight:'1.5'}}, GRADE_DESC[g])
+    );
+  });
+  const body = div({style:{display:'flex',flexDirection:'column',paddingBottom:'8px'}}, ...rows);
+  const m = modal('Grade Reference', body, div({}, btn({className:'btn', onClick:()=>m.remove()}, 'Close')), ()=>m.remove());
 }
-function attachGradeTooltip(el, grade) {
-  let holdTimer = null;
-  let showing = false;
-  const show = () => {
-    showing = true;
-    const tt = getTooltip();
-    tt.innerHTML = '<strong>'+grade+'</strong><br>'+GRADE_DESC[grade];
-    const r = el.getBoundingClientRect();
-    const x = Math.max(8, Math.min(r.left, window.innerWidth - 296));
-    const y = r.bottom + 8;
-    tt.style.left = x + 'px';
-    tt.style.top = y + 'px';
-    tt.classList.add('visible');
-  };
-  const hide = () => {
-    clearTimeout(holdTimer);
-    holdTimer = null;
-    showing = false;
-    getTooltip().classList.remove('visible');
-  };
-  el.addEventListener('pointerdown', () => { holdTimer = setTimeout(show, 500); });
-  el.addEventListener('pointerup', () => { if (!showing) { clearTimeout(holdTimer); holdTimer = null; } });
-  el.addEventListener('pointercancel', hide);
-  el.addEventListener('pointermove', () => { if (!showing) { clearTimeout(holdTimer); holdTimer = null; } });
-  document.addEventListener('pointerdown', (e) => { if (showing && e.target !== el) hide(); }, {passive:true});
+function gradeLabelWithHelp(labelText) {
+  return div({style:{display:'flex',alignItems:'center',gap:'6px',marginBottom:'8px'}},
+    el('label',{style:{fontSize:'12px',color:'#6B6B6B'}}, labelText),
+    btn({className:'btn-icon', style:{fontSize:'11px',width:'16px',height:'16px',borderRadius:'50%',
+      border:'1px solid #BDBDBD',color:'#BDBDBD',padding:'0',lineHeight:'16px',textAlign:'center',flexShrink:'0'},
+      onClick:()=>gradeInfoModal()}, '?')
+  );
 }
 function gradeBadge(grade) {
-  const el = div({className:'grade-badge',style:{background:GRADE_COLOR[grade]||'#9E9E9E'}}, grade);
-  attachGradeTooltip(el, grade);
-  return el;
+  return div({className:'grade-badge',style:{background:GRADE_COLOR[grade]||'#9E9E9E'}}, grade);
 }
 function progressBar(totalMeasures, sections) {
   const bar = div({className:'pbar'});
@@ -962,7 +942,7 @@ function sectionDialog(movement, allSections, editSection, onSave) {
   const body   = div({style:{display:'flex',flexDirection:'column',gap:'14px'}},
     fName,
     div({className:'row-fields'}, fStart, fEnd), err,
-    div({},el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Grade'), gs)
+    div({},gradeLabelWithHelp('Grade'), gs)
   );
   const foot = div({style:{display:'flex',gap:'8px'}},
     btn({className:'btn', onClick:()=>m.remove()}, 'Cancel'),
@@ -1012,7 +992,7 @@ function mergeDialog(section, prev, next, onMerge) {
     bodyParts.push(para({style:{fontSize:'14px',color:'#6B6B6B'}},
       'Merging with mm. '+mergeWith.startMeasure+'\u2013'+mergeWith.endMeasure+' ('+mergeWith.grade+').'));
   }
-  const gLbl=el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px',marginTop:'14px'}},'Grade for merged section:');
+  const gLbl=div({style:{marginTop:'14px'}},gradeLabelWithHelp('Grade for merged section:'));
   const gs=gradeSelector(grade,g=>grade=g);
   const body=div({style:{display:'flex',flexDirection:'column',gap:'0px'}},...bodyParts,gLbl,gs);
   const foot=div({style:{display:'flex',gap:'8px'}},
