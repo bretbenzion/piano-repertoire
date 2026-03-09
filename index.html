@@ -1576,13 +1576,14 @@ function makeMetronomeBlock(movement) {
 
   // BPM display
   const bpmInp = el('input',{type:'number',min:'20',max:'300',value:String(metroBpm)});
-  bpmInp.addEventListener('change',()=>{ const v=parseInt(bpmInp.value); if(!isNaN(v)&&v>=20&&v<=300){metroBpm=v;updatePresets();savePrefs();} });
+  bpmInp.addEventListener('change',()=>{ const v=parseInt(bpmInp.value); if(!isNaN(v)&&v>=20&&v<=300) setBpm(v); });
   const bpmDisplay = div({className:'metro-bpm-val'}, bpmInp);
 
   function setBpm(v) {
     metroBpm = Math.max(20, Math.min(300, Math.round(v)));
     bpmInp.value = metroBpm;
     updatePresets();
+    restartIfRunning();
     savePrefs();
   }
 
@@ -1613,8 +1614,7 @@ function makeMetronomeBlock(movement) {
   const beatsOpts = [2,3,4,5,6].map(n => {
     const b = btn({className:'metro-opt'+(beats===n?' active':''), onClick:()=>{
       beats=n; beatsOpts.forEach((x,i)=>x.classList.toggle('active',[2,3,4,5,6][i]===n));
-      buildDots(); if(running){ stopMetro(); startMetro(); }
-      savePrefs();
+      buildDots(); restartIfRunning(); savePrefs();
     }}, String(n));
     return b;
   });
@@ -1623,44 +1623,57 @@ function makeMetronomeBlock(movement) {
   const subsOpts = [1,2,3,4].map(n => {
     const b = btn({className:'metro-opt'+(subs===n?' active':''), onClick:()=>{
       subs=n; subsOpts.forEach((x,i)=>x.classList.toggle('active',[1,2,3,4][i]===n));
-      buildDots(); if(running){ stopMetro(); startMetro(); }
-      savePrefs();
+      buildDots(); restartIfRunning(); savePrefs();
     }}, String(n));
     return b;
   });
 
-  // Play button
-  const playBtn = btn({className:'metro-play stopped'});
-  playBtn.innerHTML='▶';
-  let generation = 0; // incremented on every stop — orphaned ticks self-cancel
+  // ── Tick engine ──
+  // Single source of truth: generation. Any tick with stale gen silently dies.
+  let generation = 0;
+
+  function tick(gen) {
+    if (gen !== generation) return;
+    const type = (beatIdx===0 && subIdx===0) ? 'down' : subIdx===0 ? 'beat' : 'sub';
+    metroClick(type);
+    flashDot(beatIdx, subIdx, type);
+    subIdx++;
+    if (subIdx >= subs) { subIdx = 0; beatIdx = (beatIdx + 1) % beats; }
+    tickTimer = setTimeout(() => tick(gen), (60000 / metroBpm) / subs);
+  }
 
   function stopMetro() {
-    generation++;
+    generation++;          // kills any in-flight tick
     clearTimeout(tickTimer);
     tickTimer = null;
     running = false;
     beatIdx = 0; subIdx = 0;
     clearDots();
-    playBtn.innerHTML='▶'; playBtn.className='metro-play stopped';
-  }
-
-  function scheduleTick(gen) {
-    if (gen !== generation) return; // stale tick — discard
-    const type = (beatIdx===0&&subIdx===0)?'down': subIdx===0?'beat':'sub';
-    metroClick(type);
-    flashDot(beatIdx, subIdx, type);
-    subIdx++; if(subIdx>=subs){subIdx=0; beatIdx=(beatIdx+1)%beats;}
-    tickTimer = setTimeout(()=>scheduleTick(gen), (60000/metroBpm)/subs);
+    playBtn.innerHTML = '▶';
+    playBtn.className = 'metro-play stopped';
   }
 
   function startMetro() {
-    generation++;
-    running = true; beatIdx = 0; subIdx = 0;
-    playBtn.innerHTML='■'; playBtn.className='metro-play running';
-    scheduleTick(generation);
+    generation++;          // fresh generation
+    running = true;
+    beatIdx = 0; subIdx = 0;
+    playBtn.innerHTML = '■';
+    playBtn.className = 'metro-play running';
+    tick(generation);
   }
 
-  playBtn.addEventListener('click',()=>{ if(running) stopMetro(); else startMetro(); });
+  function restartIfRunning() {
+    // Called when beats/subs/bpm change while running
+    if (!running) return;
+    generation++;          // kills current chain
+    clearTimeout(tickTimer);
+    beatIdx = 0; subIdx = 0;
+    tick(generation);      // start fresh chain with same running=true state
+  }
+
+  // Play button
+  const playBtn = btn({className:'metro-play stopped'}, '▶');
+  playBtn.addEventListener('click', () => { if (running) stopMetro(); else startMetro(); });
 
   // Tap tempo
   const tapBtn = btn({className:'metro-tap', onClick:()=>{
