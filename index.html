@@ -1380,7 +1380,7 @@ function movementTab(movement, workId) {
     ()=>generateSummary(movement,work?.title||'',composer?.name||'Unknown'));
 
   const timerBlock=makeTimerBlock(movement.id,'movement',s=>{sessionLog.onSessionAdded(s);},true/*inline*/);
-  const metro=makeMetronomeBlock(movement);
+  const metro=makeMetronomeBlock(movement,'movements');
   const sessionLog=makeSessionLog(movement.id,'movement');
 
   // Inline timer row: timer on left, metronome toggle on right
@@ -1507,13 +1507,13 @@ function metroClick(type) {
   osc.type = 'sine'; osc.start(now); osc.stop(now + 0.09);
 }
 
-function makeMetronomeBlock(movement) {
-  // Persisted prefs on the movement record
-  let baseBpm   = movement.targetBpm || 120;
-  let metroBpm  = movement.metroBpm  || baseBpm;
-  let beats     = movement.metroBeats || 4;
-  let subs      = movement.metroSubs  || 1;
-  let open      = movement.metroOpen  || false;
+function makeMetronomeBlock(record, store) {
+  // Works for both movements (store='movements') and exercises (store='exercises')
+  let baseBpm   = record.targetBpm || record.metroBpm || 120;
+  let metroBpm  = record.metroBpm  || baseBpm;
+  let beats     = record.metroBeats || 4;
+  let subs      = record.metroSubs  || 1;
+  let open      = record.metroOpen  || false;
 
   let running = false;
   let beatIdx = 0, subIdx = 0;
@@ -1521,9 +1521,11 @@ function makeMetronomeBlock(movement) {
   let tapTimes = [], tapClearTimer = null;
 
   async function savePrefs() {
-    const updated = {...IDX.movById.get(movement.id), metroBpm, metroBeats:beats, metroSubs:subs, metroOpen:open};
-    await dbPut('movements', updated);
-    applyMutations([{type:'put', store:'movements', record:updated}]);
+    const current = store==='movements' ? IDX.movById.get(record.id) : (await dbAll('exercises')).find(e=>e.id===record.id);
+    if (!current) return;
+    const updated = {...current, metroBpm, metroBeats:beats, metroSubs:subs, metroOpen:open};
+    await dbPut(store, updated);
+    if (store==='movements') applyMutations([{type:'put', store:'movements', record:updated}]);
   }
 
   // ── DOM ──
@@ -1555,14 +1557,14 @@ function makeMetronomeBlock(movement) {
       if (b > 0) { const sep=div({className:'metro-beat-sep'}); pulsesEl.appendChild(sep); }
       const grp = div({className:'metro-pulse-group'});
       for (let s = 0; s < subs; s++) {
-        const d = div({className:'metro-dot'}); d.id='mdot-'+movement.id+'-'+b+'-'+s;
+        const d = div({className:'metro-dot'}); d.id='mdot-'+record.id+'-'+b+'-'+s;
         grp.appendChild(d);
       }
       pulsesEl.appendChild(grp);
     }
   }
   function flashDot(b, s, type) {
-    const d = document.getElementById('mdot-'+movement.id+'-'+b+'-'+s);
+    const d = document.getElementById('mdot-'+record.id+'-'+b+'-'+s);
     if (!d) return;
     d.classList.remove('flash-down','flash-beat','flash-sub');
     d.classList.add(type==='down'?'flash-down':type==='beat'?'flash-beat':'flash-sub');
@@ -1570,7 +1572,7 @@ function makeMetronomeBlock(movement) {
     setTimeout(()=>d.classList.remove('flash-down','flash-beat','flash-sub'), flashMs);
   }
   function clearDots() {
-    document.querySelectorAll('[id^="mdot-'+movement.id+'"]').forEach(d=>
+    document.querySelectorAll('[id^="mdot-'+record.id+'"]').forEach(d=>
       d.classList.remove('flash-down','flash-beat','flash-sub'));
   }
 
@@ -1601,14 +1603,9 @@ function makeMetronomeBlock(movement) {
   updatePresets();
   const presetsRow = div({className:'metro-presets'}, ...presetBtns.map(p=>p.btn));
 
-  // Adj buttons
-  const adjDown = btn({className:'metro-bpm-adj'}, '−');
-  const adjUp   = btn({className:'metro-bpm-adj'}, '+');
-  let adjTimer = null;
-  function startAdj(delta) { setBpm(metroBpm+delta); adjTimer=setInterval(()=>setBpm(metroBpm+delta),110); }
-  function stopAdj() { clearInterval(adjTimer); }
-  adjDown.addEventListener('pointerdown',()=>startAdj(-1)); adjDown.addEventListener('pointerup',stopAdj); adjDown.addEventListener('pointerleave',stopAdj);
-  adjUp.addEventListener('pointerdown',  ()=>startAdj(+1)); adjUp.addEventListener('pointerup',  stopAdj); adjUp.addEventListener('pointerleave',  stopAdj);
+  // Adj buttons — simple tap only, no hold (hold causes runaway BPM on mobile)
+  const adjDown = btn({className:'metro-bpm-adj', onClick:()=>setBpm(metroBpm-1)}, '−');
+  const adjUp   = btn({className:'metro-bpm-adj', onClick:()=>setBpm(metroBpm+1)}, '+');
 
   // Beats options
   const beatsOpts = [2,3,4,5,6].map(n => {
@@ -2348,12 +2345,20 @@ function renderExerciseScreen() {
     );
 
     const timerBlock=makeTimerBlock(exerciseId,'exercise',s=>{sessionLog.onSessionAdded(s);});
+    const metro=makeMetronomeBlock(ex,'exercises');
     const sessionLog=makeSessionLog(exerciseId,'exercise');
+
+    // Timer row with metronome toggle on right
+    const timerRow=div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',alignItems:'flex-start',gap:'8px'}},
+      div({style:{flex:'1'}},timerBlock),
+      div({style:{paddingTop:'12px'}},metro.toggleBtn)
+    );
 
     const notesContent=ex.notes?div({style:{background:'#EFEEE9',borderRadius:'9px',padding:'11px 13px',marginBottom:'18px',fontSize:'14px',color:'#4A4A4A',lineHeight:'1.6',whiteSpace:'pre-wrap'}},ex.notes):null;
 
     const content=div({className:'section-content'},
-      timerBlock,
+      timerRow,
+      metro.el,
       sessionLog.el,
       notesContent
     );
