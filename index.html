@@ -310,9 +310,10 @@ async function loadAll() {
 }
 
 // Sessions: {id, subjectId, subjectType:'movement'|'exercise', durationMs, timestamp, note}
-const dbSessionsBySubject = (subjectId) => new Promise((res,rej)=>{
+const dbSessionsBySubject = (subjectId, subjectType) => new Promise((res,rej)=>{
   const r=_db.transaction('sessions','readonly').objectStore('sessions').index('subjectId').getAll(subjectId);
-  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+  r.onsuccess=()=>res(subjectType ? r.result.filter(s=>s.subjectType===subjectType) : r.result);
+  r.onerror=()=>rej(r.error);
 });
 // dailyTotals: {id:"YYYY-MM-DD:subjectId", date, subjectId, subjectType, durationMs}
 function dtKey(date, subjectId) { return date+':'+subjectId; }
@@ -338,7 +339,7 @@ async function upsertDailyTotal(date, subjectId, subjectType, deltaMs) {
 }
 async function recomputeDailyTotal(date, subjectId, subjectType) {
   // Re-sum all raw sessions for this subject on this date — called after delete
-  const sessions=await dbSessionsBySubject(subjectId);
+  const sessions=await dbSessionsBySubject(subjectId,subjectType);
   const dayMs=sessions.filter(s=>localDateStr(s.timestamp)===date)
     .reduce((sum,s)=>sum+s.durationMs,0);
   const key=dtKey(date,subjectId);
@@ -611,22 +612,29 @@ function getTooltip() {
 }
 function attachGradeTooltip(el, grade) {
   let holdTimer = null;
-  const show = (e) => {
+  let showing = false;
+  const show = () => {
+    showing = true;
     const tt = getTooltip();
     tt.innerHTML = '<strong>'+grade+'</strong><br>'+GRADE_DESC[grade];
-    tt.classList.add('visible');
     const r = el.getBoundingClientRect();
-    const x = Math.min(r.left, window.innerWidth - 296);
+    const x = Math.max(8, Math.min(r.left, window.innerWidth - 296));
     const y = r.bottom + 8;
-    tt.style.left = Math.max(8, x) + 'px';
-    tt.style.top = (y + window.scrollY) + 'px';
+    tt.style.left = x + 'px';
+    tt.style.top = y + 'px';
+    tt.classList.add('visible');
   };
-  const hide = () => { getTooltip().classList.remove('visible'); clearTimeout(holdTimer); };
-  el.addEventListener('pointerdown', e => { holdTimer = setTimeout(() => show(e), 400); });
-  el.addEventListener('pointerup', hide);
+  const hide = () => {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+    showing = false;
+    getTooltip().classList.remove('visible');
+  };
+  el.addEventListener('pointerdown', () => { holdTimer = setTimeout(show, 500); });
+  el.addEventListener('pointerup', () => { if (!showing) { clearTimeout(holdTimer); holdTimer = null; } });
   el.addEventListener('pointercancel', hide);
-  el.addEventListener('pointermove', () => { clearTimeout(holdTimer); });
-  document.addEventListener('scroll', hide, {passive:true});
+  el.addEventListener('pointermove', () => { if (!showing) { clearTimeout(holdTimer); holdTimer = null; } });
+  document.addEventListener('pointerdown', (e) => { if (showing && e.target !== el) hide(); }, {passive:true});
 }
 function gradeBadge(grade) {
   const el = div({className:'grade-badge',style:{background:GRADE_COLOR[grade]||'#9E9E9E'}}, grade);
@@ -765,7 +773,7 @@ async function generateSummary(movement, workTitle, composerName) {
     : '  (no sections graded yet)';
   const masteryPct=pct(movMastery(movement));
   // Fetch practice time
-  const sessions=await dbSessionsBySubject(movement.id);
+  const sessions=await dbSessionsBySubject(movement.id,'movement');
   const totalMs=sessions.reduce((s,x)=>s+x.durationMs,0);
   const practiceStr=totalMs>0?fmtDurationLong(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':''):'no sessions logged yet';
   // Analyse section coverage
@@ -820,7 +828,7 @@ async function generateWorkSummary(work, movements, composerName) {
   const key=getApiKey();
   if (!key) { apiKeyModal(); return null; }
   // Fetch practice time per movement
-  const sessionsByMov = await Promise.all(movements.map(m=>dbSessionsBySubject(m.id)));
+  const sessionsByMov = await Promise.all(movements.map(m=>dbSessionsBySubject(m.id,'movement')));
   const movLines=movements.map((m,i)=>{
     const secs=(IDX.secsByMov.get(m.id)||[]).slice().sort((a,b)=>a.startMeasure-b.startMeasure);
     const secStr=secs.length
@@ -1593,7 +1601,7 @@ function makeSessionLog(subjectId, subjectType) {
   }
 
   // Load async
-  dbSessionsBySubject(subjectId).then(ss=>{
+  dbSessionsBySubject(subjectId,subjectType).then(ss=>{
     sessions=ss.sort((a,b)=>b.timestamp-a.timestamp);
     refresh();
   });
@@ -1615,7 +1623,7 @@ function summaryTab(work, movements, setTab, isMulti) {
   // Total practice time across all movements (loaded async)
   const practiceTotalEl=div({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'16px'}});
   const allMovIds=movements.map(m=>m.id);
-  Promise.all(allMovIds.map(id=>dbSessionsBySubject(id))).then(results=>{
+  Promise.all(allMovIds.map(id=>dbSessionsBySubject(id,'movement'))).then(results=>{
     const allSessions=results.flat();
     const totalMs=allSessions.reduce((s,x)=>s+x.durationMs,0);
     if (totalMs>0) {
@@ -2066,7 +2074,7 @@ function renderExerciseScreen() {
         loadAndRender();
       },async()=>{
         // Delete exercise + sessions
-        const ss=await dbSessionsBySubject(exerciseId);
+        const ss=await dbSessionsBySubject(exerciseId,'exercise');
         for(const s of ss) await dbDel('sessions',s.id);
         await dbDel('exercises',exerciseId);
         navigate({screen:'exercises'});
