@@ -98,6 +98,8 @@ button{cursor:pointer}
 .ai-box-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .ai-section-title{font-size:11px;letter-spacing:.5px;font-weight:bold;color:#5B6FA8;text-transform:uppercase;margin-top:10px;margin-bottom:3px}
 .date-label{font-size:11px;color:#BDBDBD}
+.grade-tooltip{position:fixed;z-index:2000;background:#1A1A1A;color:#fff;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.5;max-width:280px;box-shadow:0 4px 20px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .15s}
+.grade-tooltip.visible{opacity:1}
 /* Search — icon shows inline in topbar; bar slides open */
 .search-wrap{display:flex;align-items:center;gap:6px;overflow:hidden;transition:width .2s}
 .search-inp{font-size:15px;padding:6px 10px;border:1.5px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);outline:none;font-family:inherit;width:180px}
@@ -134,12 +136,26 @@ button{cursor:pointer}
 <div id="app"></div>
 <script>
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const GRADES = ['A+','A','A-','B+','B','B-','C','D','E'];
-const GRADE_MASTERY = {'A+':1,'A':1,'A-':.9,'B+':0.8,'B':.75,'B-':.7,'C':.5,'D':.25,'E':0};
+const GRADES = ['AA','A','A-','B+','B','B-','C+','C','C-','D','E'];
+const GRADE_MASTERY = {'AA':1,'A':1,'A-':.9,'B+':0.85,'B':.75,'B-':.65,'C+':0.55,'C':.5,'C-':.4,'D':.25,'E':0};
 const GRADE_COLOR = {
-  'A+':'#1B5E20','A':'#2E7D32','A-':'#43A047',
-  'B+':'#66BB6A','B':'#81C784','B-':'#A5D6A7',
-  'C':'#F9C200','D':'#F47B00','E':'#E53935'
+  'AA':'#1A237E','A':'#1B5E20','A-':'#2E7D32',
+  'B+':'#43A047','B':'#66BB6A','B-':'#A5D6A7',
+  'C+':'#F9C200','C':'#F9A800','C-':'#F47B00',
+  'D':'#E53935','E':'#BDBDBD'
+};
+const GRADE_DESC = {
+  'AA':'Performance tempo or beyond. Artistically complete — phrasing, tone color, pedaling, and musical personality fully realized. Exceeds the technical requirements of the piece. Reserved for sections you would perform confidently in public.',
+  'A':'Full performance tempo. All notated details present and consistent — dynamics, articulation, ornamentation. Reliable under pressure. The target end state for most sections.',
+  'A-':'Performance tempo or very close. All details present but occasional lapses in consistency or confidence. Nearly performance-ready; needs consolidation.',
+  'B+':'At least 3/4 performance tempo or above. Basic dynamics and articulation in place, ornamentation added. Musically shaped, not just mechanically correct.',
+  'B':'3/4 performance tempo. Hands together, ornamentation added, basic dynamics and articulation present. Solid and reliable at this tempo.',
+  'B-':'3/4 performance tempo or very close. Hands together, notes clean and reliable at this tempo. Ornamentation and dynamics not yet required. Natural plateau for pieces not being taken further.',
+  'C+':'Half performance tempo or above. Hands together, notes mostly secure. Beginning to feel musical rather than mechanical.',
+  'C':'Half performance tempo. Hands together. Notes learned but concentration required to maintain accuracy.',
+  'C-':'Half performance tempo or very close. Hands together but may be unsteady. Notes mostly learned with some gaps or hesitations.',
+  'D':'Hands separate or very halting hands together. Notes partially learned. Active note-learning phase.',
+  'E':'Placeholder. Section marked out but not yet begun.'
 };
 const TAGS = ['Current','Finished','Shelved'];
 const TAG_COLOR = {Current:'#7B9E87',Finished:'#8599AE',Shelved:'#9E9E9E'};
@@ -584,8 +600,38 @@ function tagChip(tag) {
   const color = TAG_COLOR[tag]||'#9E9E9E';
   return span({className:'chip', style:{color,background:color+'22'}}, tag);
 }
+// Singleton tooltip element
+let _tooltip = null;
+function getTooltip() {
+  if (!_tooltip) {
+    _tooltip = div({className:'grade-tooltip'});
+    document.body.appendChild(_tooltip);
+  }
+  return _tooltip;
+}
+function attachGradeTooltip(el, grade) {
+  let holdTimer = null;
+  const show = (e) => {
+    const tt = getTooltip();
+    tt.innerHTML = '<strong>'+grade+'</strong><br>'+GRADE_DESC[grade];
+    tt.classList.add('visible');
+    const r = el.getBoundingClientRect();
+    const x = Math.min(r.left, window.innerWidth - 296);
+    const y = r.bottom + 8;
+    tt.style.left = Math.max(8, x) + 'px';
+    tt.style.top = (y + window.scrollY) + 'px';
+  };
+  const hide = () => { getTooltip().classList.remove('visible'); clearTimeout(holdTimer); };
+  el.addEventListener('pointerdown', e => { holdTimer = setTimeout(() => show(e), 400); });
+  el.addEventListener('pointerup', hide);
+  el.addEventListener('pointercancel', hide);
+  el.addEventListener('pointermove', () => { clearTimeout(holdTimer); });
+  document.addEventListener('scroll', hide, {passive:true});
+}
 function gradeBadge(grade) {
-  return div({className:'grade-badge',style:{background:GRADE_COLOR[grade]}}, grade);
+  const el = div({className:'grade-badge',style:{background:GRADE_COLOR[grade]||'#9E9E9E'}}, grade);
+  attachGradeTooltip(el, grade);
+  return el;
 }
 function progressBar(totalMeasures, sections) {
   const bar = div({className:'pbar'});
@@ -665,7 +711,7 @@ function fieldEl(labelText, value, onChange, opts={}) {
 
 // ─── GRADE SELECTOR ──────────────────────────────────────────────────────────
 function gradeSelector(current, onChange) {
-  const rows=[['A+','A','A-'],['B+','B','B-'],['C','D','E']];
+  const rows=[['AA','A','A-'],['B+','B','B-'],['C+','C','C-'],['D','E']];
   let selected = current;
   const wrap = div({className:'grade-grid'});
   const allBtns = {};
@@ -718,6 +764,17 @@ async function generateSummary(movement, workTitle, composerName) {
     ? secs.map((s,i)=>`  - ${s.name||'Section '+(i+1)}: mm.${s.startMeasure}–${s.endMeasure}, grade ${s.grade}`).join('\n')
     : '  (no sections graded yet)';
   const masteryPct=pct(movMastery(movement));
+  // Fetch practice time
+  const sessions=await dbSessionsBySubject(movement.id);
+  const totalMs=sessions.reduce((s,x)=>s+x.durationMs,0);
+  const practiceStr=totalMs>0?fmtDurationLong(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':''):'no sessions logged yet';
+  // Analyse section coverage
+  const totalSectioned=secs.reduce((s,x)=>s+(x.endMeasure-x.startMeasure+1),0);
+  const unsectionedMeasures=movement.totalMeasures-totalSectioned;
+  const allAtLeastC=secs.length>0&&secs.every(s=>GRADE_MASTERY[s.grade]>=GRADE_MASTERY['C']);
+
+  const gradeRef=Object.entries(GRADE_DESC).map(([g,d])=>`  ${g}: ${d}`).join('\n');
+
   const prompt=`You are a piano practice coach. A student is tracking their repertoire. Here is data for one movement:
 
 Piece: "${workTitle}" by ${composerName}
@@ -725,13 +782,22 @@ Movement: "${movement.name}"
 Total measures: ${movement.totalMeasures}
 Target BPM: ${movement.targetBpm}
 Overall mastery: ${masteryPct}
+Practice time: ${practiceStr}
 Sections:
 ${secLines}
 ${movement.notes?`\nPractice notes from student:\n${movement.notes}`:''}
 
+Grade system reference (tempo-based with qualitative criteria):
+${gradeRef}
+
+Important context for your analysis:
+- If there are significant unsectioned measures, the student is likely still learning notes in those areas — do not treat unsectioned measures as a gap or omission, treat them as work in progress.
+- If sections show a clear drop-off from higher grades at the beginning to D/E grades later in the movement, the student is likely still learning the later measures — frame this as normal progress through the piece.
+- Only shift your analysis to focus on refinement and performance if all sections have at least a C grade.
+
 Write a concise movement summary with exactly these four sections, each with a short heading:
-1. About (1–2 sentences describing this movement and its character/difficulty, including a natural description of its difficulty level as pianists would commonly describe it. Use this calibration as your reference: Beginner = Faber method books, Anna Magdalena Bach minuets; Intermediate = Bach 2-part inventions, Mozart K545, Clementi sonatinas; Late intermediate = harder Bach 2-part inventions, Chopin Waltz in B minor; Early advanced = Mozart K570, easier Chopin nocturnes, Beethoven Op.2 No.1, Bach sinfonias and most suites; Advanced = most difficult Mozart/Haydn sonatas, mid-tier Beethoven sonatas, some Bach WTC, harder Chopin nocturnes; Highly advanced = difficult Beethoven sonatas, harder Bach WTC and partitas, Chopin scherzos; Virtuoso = Chopin Ballade No.4, Liszt Sonata in B minor, hardest Bach works.)
-2. Progress (assessment of current mastery based on the grades and coverage)
+1. About (1–2 sentences describing this movement and its character/difficulty, including a natural description of its difficulty level as pianists would commonly describe it. Use this calibration: Beginner = Faber method books, Anna Magdalena Bach minuets; Intermediate = Bach 2-part inventions, Mozart K545, Clementi sonatinas; Late intermediate = harder Bach 2-part inventions, Chopin Waltz in B minor; Early advanced = Mozart K570, easier Chopin nocturnes, Beethoven Op.2 No.1, Bach sinfonias and most suites; Advanced = most difficult Mozart/Haydn sonatas, mid-tier Beethoven sonatas, some Bach WTC, harder Chopin nocturnes; Highly advanced = difficult Beethoven sonatas, harder Bach WTC and partitas, Chopin scherzos; Virtuoso = Chopin Ballade No.4, Liszt Sonata in B minor, hardest Bach works.)
+2. Progress (assessment of current mastery based on grades, coverage, and practice time — ${allAtLeastC?'all sections are at least C so focus on tempo and refinement':'note any learning-phase sections honestly'})
 3. Notes analysis (if notes are present, analyse them; if not, omit this section entirely)
 4. Suggestions (2–3 specific, actionable practice suggestions)
 
@@ -740,7 +806,7 @@ Be direct, encouraging, and specific. Do not use bullet points inside sections �
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:600,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:700,messages:[{role:'user',content:prompt}]})
   });
   if (!resp.ok) {
     const e=await resp.json().catch(()=>({}));
@@ -753,16 +819,26 @@ Be direct, encouraging, and specific. Do not use bullet points inside sections �
 async function generateWorkSummary(work, movements, composerName) {
   const key=getApiKey();
   if (!key) { apiKeyModal(); return null; }
-  const movLines=movements.map(m=>{
+  // Fetch practice time per movement
+  const sessionsByMov = await Promise.all(movements.map(m=>dbSessionsBySubject(m.id)));
+  const movLines=movements.map((m,i)=>{
     const secs=(IDX.secsByMov.get(m.id)||[]).slice().sort((a,b)=>a.startMeasure-b.startMeasure);
     const secStr=secs.length
       ? secs.map((s,i)=>`    - ${s.name||'Section '+(i+1)}: mm.${s.startMeasure}–${s.endMeasure}, grade ${s.grade}`).join('\n')
       : '    (no sections graded yet)';
     const mp=pct(movMastery(m));
-    return `  Movement: "${m.name}" | ${m.totalMeasures} mm | BPM ${m.targetBpm} | mastery ${mp}\n${secStr}`+
+    const totalSectioned=secs.reduce((s,x)=>s+(x.endMeasure-x.startMeasure+1),0);
+    const unsectioned=m.totalMeasures-totalSectioned;
+    const sess=sessionsByMov[i];
+    const practiceStr=sess.length>0?fmtDurationLong(sess.reduce((s,x)=>s+x.durationMs,0))+' across '+sess.length+' session'+(sess.length!==1?'s':''):'no sessions logged';
+    return `  Movement: "${m.name}" | ${m.totalMeasures} mm | BPM ${m.targetBpm} | mastery ${mp} | practice: ${practiceStr}${unsectioned>0?' | '+unsectioned+' unsectioned measures':''}\n${secStr}`+
       (m.notes?`\n  Student notes: ${m.notes}`:'');
   }).join('\n\n');
   const overallPct=pct(workMastery(work.id));
+  const allSecs=movements.flatMap(m=>IDX.secsByMov.get(m.id)||[]);
+  const allAtLeastC=allSecs.length>0&&allSecs.every(s=>GRADE_MASTERY[s.grade]>=GRADE_MASTERY['C']);
+
+  const gradeRef=Object.entries(GRADE_DESC).map(([g,d])=>`  ${g}: ${d}`).join('\n');
 
   const prompt=`You are a piano practice coach. A student is tracking their repertoire. Here is data for a complete work:
 
@@ -771,9 +847,17 @@ Overall mastery: ${overallPct}
 
 ${movLines}
 
+Grade system reference (tempo-based with qualitative criteria):
+${gradeRef}
+
+Important context for your analysis:
+- Unsectioned measures indicate the student is still learning notes in those areas — treat them as work in progress, not gaps.
+- A drop-off from higher grades at the start of a movement to D/E grades later is normal when still learning through a piece.
+- Only shift analysis to refinement and performance focus if all sections across all movements have at least a C grade.
+
 Write a concise work-level summary with exactly these four sections, each with a short heading:
-1. About (2–3 sentences describing the work as a whole — its character, structure, and significance — including a natural description of its difficulty level as pianists would commonly describe it. Use this calibration as your reference: Beginner = Faber method books, Anna Magdalena Bach minuets; Intermediate = Bach 2-part inventions, Mozart K545, Clementi sonatinas; Late intermediate = harder Bach 2-part inventions, Chopin Waltz in B minor; Early advanced = Mozart K570, easier Chopin nocturnes, Beethoven Op.2 No.1, Bach sinfonias and most suites; Advanced = most difficult Mozart/Haydn sonatas, mid-tier Beethoven sonatas, some Bach WTC, harder Chopin nocturnes; Highly advanced = difficult Beethoven sonatas, harder Bach WTC and partitas, Chopin scherzos; Virtuoso = Chopin Ballade No.4, Liszt Sonata in B minor, hardest Bach works.)
-2. Progress (assessment of progress across all movements, noting which are strongest and which need most work)
+1. About (2–3 sentences describing the work as a whole — its character, structure, and significance — including a natural description of its difficulty level. Use this calibration: Beginner = Faber method books, Anna Magdalena Bach minuets; Intermediate = Bach 2-part inventions, Mozart K545, Clementi sonatinas; Late intermediate = harder Bach 2-part inventions, Chopin Waltz in B minor; Early advanced = Mozart K570, easier Chopin nocturnes, Beethoven Op.2 No.1, Bach sinfonias and most suites; Advanced = most difficult Mozart/Haydn sonatas, mid-tier Beethoven sonatas, some Bach WTC, harder Chopin nocturnes; Highly advanced = difficult Beethoven sonatas, harder Bach WTC and partitas, Chopin scherzos; Virtuoso = Chopin Ballade No.4, Liszt Sonata in B minor, hardest Bach works.)
+2. Progress (assessment across all movements, noting practice time, which movements are strongest, and which need most work — ${allAtLeastC?'all sections are at least C so focus on tempo and refinement':'note learning-phase movements honestly'})
 3. Notes analysis (synthesise any student notes across movements; if none exist, omit this section entirely)
 4. Suggestions (3–4 specific, actionable practice suggestions considering the whole work)
 
@@ -782,7 +866,7 @@ Be direct, encouraging, and specific. Do not use bullet points inside sections �
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:800,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:900,messages:[{role:'user',content:prompt}]})
   });
   if (!resp.ok) {
     const e=await resp.json().catch(()=>({}));
@@ -909,10 +993,11 @@ function mergeDialog(section, prev, next, onMerge) {
   if (both) {
     bodyParts.push(el('label',{style:{fontSize:'12px',color:'#6B6B6B',display:'block',marginBottom:'8px'}},'Merge with:'));
     for (const other of [prev,next]) {
-      const rb=el('input',{type:'radio'}); rb.checked=(mergeWith.id===other.id);
+      const rb=el('input',{type:'radio',name:'merge-target',value:other===prev?'prev':'next'});
+      rb.checked=(mergeWith===other);
+      rb.addEventListener('change',()=>{ if(rb.checked) mergeWith=other; });
       const lbEl=el('label',{style:{display:'flex',alignItems:'center',gap:'10px',fontSize:'14px',padding:'6px 0',cursor:'pointer'}},
         rb,(other===prev?'Previous':'Next')+' (mm. '+other.startMeasure+'\u2013'+other.endMeasure+' \u00b7 '+other.grade+')');
-      lbEl.addEventListener('click',()=>{mergeWith=other;rb.checked=true;});
       bodyParts.push(lbEl);
     }
   } else {
@@ -1745,7 +1830,20 @@ function renderHomeScreen() {
         searchInp.style.display=searchOpen?'block':'none';
         if (searchOpen) { searchInp.focus(); }
         else { searchInp.value=''; searchQuery=''; buildList(); }
-      }},'🔍');
+      }},
+      (()=>{
+        const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
+        s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('width','20'); s.setAttribute('height','20');
+        s.setAttribute('fill','none'); s.setAttribute('stroke','currentColor');
+        s.setAttribute('stroke-width','2'); s.setAttribute('stroke-linecap','round');
+        const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx','10'); c.setAttribute('cy','10'); c.setAttribute('r','6');
+        const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1','14.5'); l.setAttribute('y1','14.5'); l.setAttribute('x2','20'); l.setAttribute('y2','20');
+        s.appendChild(c); s.appendChild(l);
+        return s;
+      })()
+    );
     header.appendChild(div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
       span({style:{fontSize:'20px',color:'var(--text)'}},'Repertoire'),
       div({style:{display:'flex',gap:'4px',alignItems:'center'}},
