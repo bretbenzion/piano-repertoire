@@ -1223,7 +1223,7 @@ async function reload() {
   buildIndex(raw);
   render();
 }
-function navigate(nav) { NAV={...nav,tabIdx:undefined}; render(); }
+function navigate(nav) { if(_activeMetro){_activeMetro.stop();_activeMetro=null;} NAV={...nav,tabIdx:undefined}; render(); }
 function goBack() {
   if (NAV.screen==='work') navigate({screen:'composer',composerName:NAV.composerName});
   else navigate({screen:'home'});
@@ -1478,6 +1478,7 @@ function makeAiBox(cacheKey, generateFn) {
 
 // ─── METRONOME ────────────────────────────────────────────────────────────────
 let _audioCtx = null;
+let _activeMetro = null; // currently running metronome — stopped on tab/nav change
 function getAudioCtx() {
   if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (_audioCtx.state === 'suspended') _audioCtx.resume();
@@ -1612,7 +1613,7 @@ function makeMetronomeBlock(movement) {
   const beatsOpts = [2,3,4,5,6].map(n => {
     const b = btn({className:'metro-opt'+(beats===n?' active':''), onClick:()=>{
       beats=n; beatsOpts.forEach((x,i)=>x.classList.toggle('active',[2,3,4,5,6][i]===n));
-      buildDots(); if(running){clearTimeout(tickTimer);beatIdx=0;subIdx=0;scheduleTick();}
+      buildDots(); if(running){ stopMetro(); startMetro(); }
       savePrefs();
     }}, String(n));
     return b;
@@ -1622,7 +1623,7 @@ function makeMetronomeBlock(movement) {
   const subsOpts = [1,2,3,4].map(n => {
     const b = btn({className:'metro-opt'+(subs===n?' active':''), onClick:()=>{
       subs=n; subsOpts.forEach((x,i)=>x.classList.toggle('active',[1,2,3,4][i]===n));
-      buildDots(); if(running){clearTimeout(tickTimer);beatIdx=0;subIdx=0;scheduleTick();}
+      buildDots(); if(running){ stopMetro(); startMetro(); }
       savePrefs();
     }}, String(n));
     return b;
@@ -1631,23 +1632,35 @@ function makeMetronomeBlock(movement) {
   // Play button
   const playBtn = btn({className:'metro-play stopped'});
   playBtn.innerHTML='▶';
-  function scheduleTick() {
+  let generation = 0; // incremented on every stop — orphaned ticks self-cancel
+
+  function stopMetro() {
+    generation++;
+    clearTimeout(tickTimer);
+    tickTimer = null;
+    running = false;
+    beatIdx = 0; subIdx = 0;
+    clearDots();
+    playBtn.innerHTML='▶'; playBtn.className='metro-play stopped';
+  }
+
+  function scheduleTick(gen) {
+    if (gen !== generation) return; // stale tick — discard
     const type = (beatIdx===0&&subIdx===0)?'down': subIdx===0?'beat':'sub';
     metroClick(type);
     flashDot(beatIdx, subIdx, type);
     subIdx++; if(subIdx>=subs){subIdx=0; beatIdx=(beatIdx+1)%beats;}
-    tickTimer = setTimeout(scheduleTick, (60000/metroBpm)/subs);
+    tickTimer = setTimeout(()=>scheduleTick(gen), (60000/metroBpm)/subs);
   }
-  playBtn.addEventListener('click',()=>{
-    if (running) {
-      clearTimeout(tickTimer); running=false; beatIdx=0; subIdx=0;
-      clearDots(); playBtn.innerHTML='▶'; playBtn.className='metro-play stopped';
-    } else {
-      running=true; beatIdx=0; subIdx=0;
-      playBtn.innerHTML='■'; playBtn.className='metro-play running';
-      scheduleTick();
-    }
-  });
+
+  function startMetro() {
+    generation++;
+    running = true; beatIdx = 0; subIdx = 0;
+    playBtn.innerHTML='■'; playBtn.className='metro-play running';
+    scheduleTick(generation);
+  }
+
+  playBtn.addEventListener('click',()=>{ if(running) stopMetro(); else startMetro(); });
 
   // Tap tempo
   const tapBtn = btn({className:'metro-tap', onClick:()=>{
@@ -1686,7 +1699,11 @@ function makeMetronomeBlock(movement) {
 
   buildDots();
   container.appendChild(panel);
-  return {el:container, toggleBtn, stop:()=>{ if(running){ clearTimeout(tickTimer); running=false; beatIdx=0; subIdx=0; clearDots(); playBtn.innerHTML='▶'; playBtn.className='metro-play stopped'; } }};
+  // Stop any previously active metronome and register this one
+  if (_activeMetro) _activeMetro.stop();
+  const metroRef = {el:container, toggleBtn, stop: stopMetro};
+  _activeMetro = metroRef;
+  return metroRef;
 }
 
 // ─── TIMER COMPONENT ─────────────────────────────────────────────────────────
@@ -1964,6 +1981,7 @@ function renderWorkScreen() {
   function setTab(idx) {
     currentTab=idx;
     NAV.tabIdx=idx;
+    if (_activeMetro) { _activeMetro.stop(); _activeMetro=null; }
     contentArea.innerHTML='';
     if (movements.length===0) {
       contentArea.appendChild(div({className:'empty'},
