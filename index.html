@@ -1488,27 +1488,28 @@ function metroClick(type) {
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
 
-  function clave(freq, gain) {
-    const m = ctx.createGain(); m.connect(ctx.destination);
-    [[1,1],[2.3,0.45],[3.8,0.18]].forEach(([mult,w])=>{
-      const o=ctx.createOscillator(), g=ctx.createGain(); o.type='sine';
-      o.frequency.setValueAtTime(freq*mult, now);
-      g.gain.setValueAtTime(gain*w, now);
-      g.gain.exponentialRampToValueAtTime(0.001, now+0.05/mult);
-      o.connect(g); g.connect(m); o.start(now); o.stop(now+0.06);
-    });
-    // Bright crack transient
-    const bsz=Math.floor(ctx.sampleRate*0.003), buf=ctx.createBuffer(1,bsz,ctx.sampleRate), d=buf.getChannelData(0);
-    for(let i=0;i<bsz;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(bsz*0.1));
-    const ns=ctx.createBufferSource(); ns.buffer=buf;
-    const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=4000; bp.Q.value=0.4;
-    const ng=ctx.createGain(); ng.gain.setValueAtTime(gain*1.1, now);
-    ns.connect(bp); bp.connect(ng); ng.connect(m); ns.start(now); ns.stop(now+0.004);
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -3; comp.knee.value = 2; comp.ratio.value = 12;
+  comp.attack.value = 0.0005; comp.release.value = 0.03;
+  comp.connect(ctx.destination);
+
+  function hiTick(freq, gain) {
+    const m = ctx.createGain(); m.connect(comp);
+    const bsz = Math.floor(ctx.sampleRate * 0.012), buf = ctx.createBuffer(1, bsz, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < bsz; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bsz * 0.18));
+    const ns = ctx.createBufferSource(); ns.buffer = buf;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = freq; hp.Q.value = 0.7;
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(gain, now); ng.gain.exponentialRampToValueAtTime(0.001, now + 0.012);
+    ns.connect(hp); hp.connect(ng); ng.connect(m); ns.start(now); ns.stop(now + 0.015);
+    const o = ctx.createOscillator(), og = ctx.createGain(); o.type = 'sine';
+    o.frequency.setValueAtTime(freq * 0.4, now); o.frequency.exponentialRampToValueAtTime(freq * 0.2, now + 0.02);
+    og.gain.setValueAtTime(gain * 0.35, now); og.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+    o.connect(og); og.connect(m); o.start(now); o.stop(now + 0.025);
   }
 
-  if (type==='down')      clave(1050, 1.4);
-  else if (type==='beat') clave(820,  1.1);
-  else                    clave(580,  0.55);
+  if (type === 'down')      hiTick(6000, 4.5);
+  else if (type === 'beat') hiTick(4500, 3.5);
+  else                      hiTick(3000, 1.8);
 }
 
 function makeMetronomeBlock(record, store) {
