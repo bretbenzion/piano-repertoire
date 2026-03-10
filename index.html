@@ -1486,25 +1486,29 @@ function getAudioCtx() {
 }
 function metroClick(type) {
   const ctx = getAudioCtx();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain); gain.connect(ctx.destination);
   const now = ctx.currentTime;
-  if (type === 'down') {
-    osc.frequency.setValueAtTime(1100, now);
-    osc.frequency.exponentialRampToValueAtTime(600, now + 0.02);
-    gain.gain.setValueAtTime(1.0, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
-  } else if (type === 'beat') {
-    osc.frequency.setValueAtTime(700, now);
-    gain.gain.setValueAtTime(0.55, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-  } else {
-    osc.frequency.setValueAtTime(420, now);
-    gain.gain.setValueAtTime(0.28, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+
+  function clave(freq, gain) {
+    const m = ctx.createGain(); m.connect(ctx.destination);
+    [[1,1],[2.3,0.45],[3.8,0.18]].forEach(([mult,w])=>{
+      const o=ctx.createOscillator(), g=ctx.createGain(); o.type='sine';
+      o.frequency.setValueAtTime(freq*mult, now);
+      g.gain.setValueAtTime(gain*w, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now+0.05/mult);
+      o.connect(g); g.connect(m); o.start(now); o.stop(now+0.06);
+    });
+    // Bright crack transient
+    const bsz=Math.floor(ctx.sampleRate*0.003), buf=ctx.createBuffer(1,bsz,ctx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<bsz;i++) d[i]=(Math.random()*2-1)*Math.exp(-i/(bsz*0.1));
+    const ns=ctx.createBufferSource(); ns.buffer=buf;
+    const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=4000; bp.Q.value=0.4;
+    const ng=ctx.createGain(); ng.gain.setValueAtTime(gain*1.1, now);
+    ns.connect(bp); bp.connect(ng); ng.connect(m); ns.start(now); ns.stop(now+0.004);
   }
-  osc.type = 'sine'; osc.start(now); osc.stop(now + 0.09);
+
+  if (type==='down')      clave(1050, 1.4);
+  else if (type==='beat') clave(820,  1.1);
+  else                    clave(580,  0.55);
 }
 
 function makeMetronomeBlock(record, store) {
