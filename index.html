@@ -789,7 +789,7 @@ async function generateSummary(movement, workTitle, composerName) {
   // Fetch practice time
   const sessions=await dbSessionsBySubject(movement.id,'movement');
   const totalMs=sessions.reduce((s,x)=>s+x.durationMs,0);
-  const practiceStr=totalMs>0?fmtDurationLong(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':''):'no sessions logged yet';
+  const practiceStr=totalMs>0?fmtDurationHM(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':''):'no sessions logged yet';
   // Analyse section coverage
   const totalSectioned=secs.reduce((s,x)=>s+(x.endMeasure-x.startMeasure+1),0);
   const unsectionedMeasures=movement.totalMeasures-totalSectioned;
@@ -852,7 +852,7 @@ async function generateWorkSummary(work, movements, composerName) {
     const totalSectioned=secs.reduce((s,x)=>s+(x.endMeasure-x.startMeasure+1),0);
     const unsectioned=m.totalMeasures-totalSectioned;
     const sess=sessionsByMov[i];
-    const practiceStr=sess.length>0?fmtDurationLong(sess.reduce((s,x)=>s+x.durationMs,0))+' across '+sess.length+' session'+(sess.length!==1?'s':''):'no sessions logged';
+    const practiceStr=sess.length>0?fmtDurationHM(sess.reduce((s,x)=>s+x.durationMs,0))+' across '+sess.length+' session'+(sess.length!==1?'s':''):'no sessions logged';
     return `  Movement: "${m.name}" | ${m.totalMeasures} mm | BPM ${m.targetBpm} | mastery ${mp} | practice: ${practiceStr}${unsectioned>0?' | '+unsectioned+' unsectioned measures':''}\n${secStr}`+
       (m.notes?`\n  Student notes: ${m.notes}`:'');
   }).join('\n\n');
@@ -1359,9 +1359,8 @@ function movementTab(movement, workId) {
   const headerBtns=div({style:{display:'flex',gap:'6px',flexShrink:'0',marginTop:'2px',alignItems:'center'}},
     reorderBtns, editBtn, extractBtn);
 
-  // ── Date label ──
-  const dateStr = fmtDate(movement.lastWorked||work?.lastWorked);
-  const dateLbl = dateStr ? span({className:'date-label'}, (movement.lastWorked?'Practiced ':'Updated ') + dateStr) : null;
+  // ── Practice time — live element updated when sessions change ──
+  const practiceEl = div({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'14px'}});
 
   // ── Notes block with toggle ──
   let notesVisible = false;
@@ -1379,9 +1378,22 @@ function movementTab(movement, workId) {
   const aiBox=makeAiBox('mov:'+movement.id,
     ()=>generateSummary(movement,work?.title||'',composer?.name||'Unknown'));
 
-  const timerBlock=makeTimerBlock(movement.id,'movement',s=>{sessionLog.onSessionAdded(s);},true/*inline*/);
+  function refreshPracticeEl() {
+    dbSessionsBySubject(movement.id,'movement').then(sessions=>{
+      const totalMs=sessions.reduce((s,x)=>s+x.durationMs,0);
+      practiceEl.textContent = totalMs>0
+        ? fmtDurationHM(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':'')
+        : '';
+    });
+  }
+  refreshPracticeEl();
+
+  const timerBlock=makeTimerBlock(movement.id,'movement',s=>{
+    sessionLog.onSessionAdded(s);
+    refreshPracticeEl();
+  },true/*inline*/);
   const metro=makeMetronomeBlock(movement,'movements');
-  const sessionLog=makeSessionLog(movement.id,'movement');
+  const sessionLog=makeSessionLog(movement.id,'movement', ()=>refreshPracticeEl());
 
   // Inline timer row: timer on left, metronome toggle on right
   const timerRow=div({style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:'6px',marginBottom:'12px'}},
@@ -1399,7 +1411,7 @@ function movementTab(movement, workId) {
     ),
     timerRow,
     metro.el,
-    dateLbl ? div({style:{marginBottom:'14px'}},dateLbl) : div({style:{marginBottom:'14px'}}),
+    practiceEl,
     pbarRow,
     notesToggle,
     notesContent,
@@ -1822,7 +1834,7 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved, fromTimer=
 }
 
 // ─── SESSION LOG COMPONENT ────────────────────────────────────────────────────
-function makeSessionLog(subjectId, subjectType) {
+function makeSessionLog(subjectId, subjectType, onNewSession) {
   const container=div({style:{marginBottom:'18px'}});
   let sessions=[];
 
@@ -1839,9 +1851,6 @@ function makeSessionLog(subjectId, subjectType) {
       container.appendChild(para({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'8px'}},'No sessions logged yet.'));
       return;
     }
-    const totalMs=sessions.reduce((s,x)=>s+x.durationMs,0);
-    container.appendChild(div({style:{fontSize:'13px',color:'#6B6B6B',marginBottom:'8px'}},
-      'Total: '+fmtDurationLong(totalMs)+' across '+sessions.length+' session'+(sessions.length!==1?'s':'')));
     const listEl=div({style:{background:'#EFEEE9',borderRadius:'10px',padding:'0 12px'}});
     for (const s of sessions) {
       const d=new Date(s.timestamp);
@@ -1873,7 +1882,7 @@ function makeSessionLog(subjectId, subjectType) {
     refresh();
   });
   refresh();
-  return {el:container, onSessionAdded:(s)=>{sessions.unshift(s);refresh();}};
+  return {el:container, onSessionAdded:(s)=>{sessions.unshift(s);refresh();if(onNewSession)onNewSession(s);}};
 }
 
 
@@ -1894,7 +1903,7 @@ function summaryTab(work, movements, setTab, isMulti) {
     const allSessions=results.flat();
     const totalMs=allSessions.reduce((s,x)=>s+x.durationMs,0);
     if (totalMs>0) {
-      practiceTotalEl.textContent='Total practice time: '+fmtDurationLong(totalMs)+
+      practiceTotalEl.textContent=fmtDurationHM(totalMs)+
         ' across '+allSessions.length+' session'+(allSessions.length!==1?'s':'');
     }
   });
@@ -1917,8 +1926,7 @@ function summaryTab(work, movements, setTab, isMulti) {
       ),
       progressBar(m.totalMeasures,secs),
       div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},
-        m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm +
-        (m.lastWorked ? ' \u00b7 ' + fmtDate(m.lastWorked) : (work.lastWorked ? ' \u00b7 ' + fmtDate(work.lastWorked) : ''))
+        m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm
       )
     ));
   }
@@ -2068,7 +2076,7 @@ function renderComposerScreen() {
         div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
           tagChip(w.tag),
           movCount>0?span({className:'small'},movCount+' movement'+(movCount!==1?'s':'')):null,
-          w.lastWorked?span({className:'date-label'},fmtDate(w.lastWorked)):null
+          null
         )
       ),
       movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
@@ -2080,16 +2088,17 @@ function renderComposerScreen() {
 
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 function renderHomeScreen() {
-  let sortMode='composer', filterTag='All', searchQuery='', searchOpen=false;
+  let sortMode='recent', filterTag='Current', searchQuery='', searchOpen=false;
   const screen=div({className:'screen'});
   const header=div({style:{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',flexShrink:'0'}});
 
-  // Collapsible search bar (hidden until icon tapped)
+  // Search input lives outside buildHeader so it is never recreated (preserves focus & value)
   const searchInp=el('input',{type:'search',placeholder:'Search works & composers…',className:'search-inp',
     style:{display:'none',marginBottom:'10px',width:'100%'}});
   searchInp.addEventListener('input',()=>{searchQuery=searchInp.value.trim().toLowerCase();buildList();});
 
   function buildHeader() {
+    // Clear everything except searchInp which we re-append each time
     header.innerHTML='';
     const isSans=document.body.classList.contains('theme-sans');
     const themeBtn=btn({className:'btn-icon',style:{fontSize:'16px'},title:'Toggle theme',
@@ -2132,7 +2141,7 @@ function renderHomeScreen() {
         ))
       )
     ));
-    header.appendChild(searchInp);
+    header.appendChild(searchInp); // re-attach (not recreate) — preserves focus
     const chips=div({className:'chips'});
     for (const tag of ['All',...TAGS]) {
       const color=TAG_COLOR[tag];
@@ -2171,7 +2180,7 @@ function renderHomeScreen() {
             div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
             div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
               tagChip(w.tag),
-              w.lastWorked?span({className:'date-label'},fmtDate(w.lastWorked)):null
+              null
             )
           ),
           movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
@@ -2210,7 +2219,7 @@ function renderHomeScreen() {
             div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
             div({style:{display:'flex',gap:'8px',marginTop:'6px',alignItems:'center'}},
               tagChip(w.tag),
-              w.lastWorked?span({className:'date-label'},fmtDate(w.lastWorked)):null
+              null
             )
           ),
           movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
