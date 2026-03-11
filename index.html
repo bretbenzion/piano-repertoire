@@ -1293,26 +1293,7 @@ async function reload() {
       if (i>=0) raw.movements[i]=u;
     }
   }
-  // ── Backfill lastSessionAt on movements that predate this field ──
-  const needsBackfill = true; // always recompute from real session timestamps
-  if (needsBackfill) {
-    const allSessions = await dbAll('sessions');
-    // Build map: subjectId -> max timestamp
-    const latestTs = new Map();
-    for (const s of allSessions) {
-      if (s.subjectType !== 'movement') continue;
-      const cur = latestTs.get(s.subjectId)||0;
-      if (s.timestamp > cur) latestTs.set(s.subjectId, s.timestamp);
-    }
-    for (let i=0; i<raw.movements.length; i++) {
-      const m = raw.movements[i];
-      const ts = latestTs.get(m.id);
-      if (!ts) continue;
-      const updated = {...m, lastSessionAt: ts};
-      raw.movements[i] = updated;
-      await dbPut('movements', updated);
-    }
-  }
+
   STATE = raw;
   buildIndex(raw);
   render();
@@ -1921,7 +1902,7 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved, fromTimer=
       if (subjectType==='movement') {
         const mov=IDX.movById.get(subjectId);
         if (mov) {
-          const updMov={...mov,lastWorked:ts,lastSessionAt:ts};
+          const updMov={...mov,lastWorked:ts};
           await dbPut('movements',updMov);
           applyMutations([{type:'put',store:'movements',record:updMov}]);
         }
@@ -2282,11 +2263,11 @@ function renderHomeScreen() {
   // Last session timestamp across all movements — 0 if none ever logged
   function workRecency(workId) {
     const movs=IDX.movsByWork.get(workId)||[];
-    return movs.reduce((best,m)=>Math.max(best,m.lastSessionAt||0),0);
+    return movs.reduce((best,m)=>Math.max(best,m.lastWorked||0),0);
   }
 
   // Movement recency — for mixed-tag sorting
-  function movRecency(m) { return m.lastSessionAt||0; }
+  function movRecency(m) { return m.lastWorked||0; }
 
   // ── Work row: used in both search and work view ──
   function workRow(w) {
