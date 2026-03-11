@@ -189,8 +189,10 @@ const GRADE_DESC = {
   'D':'Hands separate or very halting hands together. Notes partially learned. Active note-learning phase.',
   'E':'Placeholder. Section marked out but not yet begun.'
 };
-const TAGS = ['Current','Finished','Shelved'];
-const TAG_COLOR = {Current:'#7B9E87',Finished:'#8599AE',Shelved:'#9E9E9E'};
+const TAGS = ['Current','Learned','Finished','Inactive'];
+const TAG_COLOR = {Current:'#7B9E87', Learned:'#5B8DB8', Finished:'#B8960C', Inactive:'#9E9E9E'};
+const TAG_AUTO = new Set(['Learned','Finished']); // auto-computed, not manually set
+const MANUAL_TAGS = ['Current','Inactive']; // tags user can manually assign
 
 // ─── DATE HELPERS ─────────────────────────────────────────────────────────────
 // Always use local calendar date, not UTC, to avoid timezone-shift bugs
@@ -443,6 +445,43 @@ function movMastery(mov)    { return _calcMovMastery(mov); }
 function workMastery(workId){ return IDX.MASTERY.get(workId)??0; }
 function recomputeMastery(workId) { IDX.MASTERY.set(workId,_calcWorkMastery(workId)); }
 
+// ─── AUTO-TAG COMPUTATION ────────────────────────────────────────────────────
+// Returns the effective tag for a movement, considering auto-tags first.
+function computeMovTag(mov) {
+  const secs = IDX.secsByMov.get(mov.id)||[];
+  if (!secs.length) return mov.tag||'Inactive';
+  // All measures must be sectioned
+  const totalSectioned = secs.reduce((s,x)=>s+(x.endMeasure-x.startMeasure+1),0);
+  if (totalSectioned < (mov.totalMeasures||0)) return mov.tag||'Inactive';
+  // Check grade thresholds
+  const allA  = secs.every(s=>GRADE_MASTERY[s.grade]>=GRADE_MASTERY['A']);
+  const allB  = secs.every(s=>GRADE_MASTERY[s.grade]>=GRADE_MASTERY['B']);
+  if (allA) return 'Finished';
+  if (allB) return 'Learned';
+  return mov.tag||'Inactive';
+}
+
+// Returns shared tag across all movements, or 'mixed'
+function computeWorkTag(workId) {
+  const movs = IDX.movsByWork.get(workId)||[];
+  if (!movs.length) return IDX.workById.get(workId)?.tag||'Inactive';
+  const tags = movs.map(m=>computeMovTag(m));
+  return tags.every(t=>t===tags[0]) ? tags[0] : 'mixed';
+}
+
+// Priority display tag for composer view — no 'mixed', always returns a single tag.
+// Current (any) > Finished (all non-Inactive) > Learned (all non-Inactive) > Inactive
+const TAG_PRIORITY = {Current:3, Finished:2, Learned:1, Inactive:0};
+function computeWorkDisplayTag(workId) {
+  const movs = IDX.movsByWork.get(workId)||[];
+  if (!movs.length) return IDX.workById.get(workId)?.tag||'Inactive';
+  const tags = movs.map(m=>computeMovTag(m));
+  if (tags.some(t=>t==='Current')) return 'Current';
+  if (tags.every(t=>t==='Inactive')) return 'Inactive';
+  // Return highest achieved
+  return tags.reduce((best,t)=>(TAG_PRIORITY[t]||0)>(TAG_PRIORITY[best]||0)?t:best,'Inactive');
+}
+
 // ─── PARTIAL STATE MUTATION ───────────────────────────────────────────────────
 // Call instead of reload() after any DB write. Updates STATE + IDX in-place,
 // then re-renders. No full DB round-trip; only the caller's awaited dbPut/dbDel
@@ -630,6 +669,9 @@ const para = (p,...c) => el('p',p,...c);
 
 // ─── SMALL COMPONENTS ────────────────────────────────────────────────────────
 function tagChip(tag) {
+  if (!tag || tag==='mixed') {
+    return span({className:'chip', style:{color:'#9E9E9E',background:'#9E9E9E22'}}, tag||'—');
+  }
   const color = TAG_COLOR[tag]||'#9E9E9E';
   return span({className:'chip', style:{color,background:color+'22'}}, tag);
 }
@@ -1038,7 +1080,7 @@ function mergeDialog(section, prev, next, onMerge) {
 
 function tagDialog(current, onSelect) {
   const body=div({style:{display:'flex',flexDirection:'column',marginBottom:'4px'}});
-  for (const [i,tag] of TAGS.entries()) {
+  for (const [i,tag] of MANUAL_TAGS.entries()) {
     const color=TAG_COLOR[tag];
     const rb=el('input',{type:'radio'}); rb.checked=(tag===current);
     const row=el('label',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px 4px',
@@ -1047,6 +1089,9 @@ function tagDialog(current, onSelect) {
     row.addEventListener('click',()=>{m.remove();onSelect(tag);});
     body.appendChild(row);
   }
+  const note=para({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'8px',fontStyle:'italic'}},
+    'Learned and Finished are set automatically based on section grades.');
+  body.appendChild(note);
   const m=modal('Set tag',body,div({},btn({className:'btn',onClick:()=>m.remove()},'Cancel')),()=>m.remove());
 }
 
@@ -1093,8 +1138,8 @@ function convertToMovementDialog(sourceWork, sourceComposerName) {
       const ops=[];
       if (sourceMov.length===1) {
         const sm = sourceMov[0];
-        const newMovId = await dbPut('movements',{workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,notes:sm.notes||'',orderIndex});
-        const newMovRec={id:newMovId,workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,notes:sm.notes||'',orderIndex};
+        const newMovId = await dbPut('movements',{workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,notes:sm.notes||'',orderIndex,tag:sm.tag||'Current'});
+        const newMovRec={id:newMovId,workId:targetWorkId,name:movName.trim(),totalMeasures:sm.totalMeasures,targetBpm:sm.targetBpm,notes:sm.notes||'',orderIndex,tag:sm.tag||'Current'};
         ops.push({type:'put',store:'movements',record:newMovRec});
         const secs = IDX.secsByMov.get(sm.id)||[];
         for (const s of secs) {await dbPut('sections',{...s,movementId:newMovId});ops.push({type:'put',store:'sections',record:{...s,movementId:newMovId}});}
@@ -1219,6 +1264,30 @@ let STATE = {composers:[],works:[],movements:[],sections:[]};
 let NAV   = {screen:'home'};
 async function reload() {
   const raw = await loadAll();
+  // ── Migration: move tags from works→movements, Finished/Shelved→Inactive ──
+  const movUpdates = [];
+  for (const m of raw.movements) {
+    if (!m.tag) {
+      // Inherit from parent work, migrating old values
+      const w = raw.works.find(x=>x.id===m.workId);
+      const wTag = w?.tag||'Inactive';
+      const migrated = (wTag==='Finished'||wTag==='Shelved') ? 'Inactive' : wTag;
+      const updated = {...m, tag: migrated};
+      movUpdates.push(updated);
+      await dbPut('movements', updated);
+    } else if (m.tag==='Shelved' || m.tag==='Finished') {
+      // Finished was manual before — migrate to Inactive (auto-tag will re-evaluate)
+      const updated = {...m, tag:'Inactive'};
+      movUpdates.push(updated);
+      await dbPut('movements', updated);
+    }
+  }
+  if (movUpdates.length) {
+    for (const u of movUpdates) {
+      const i = raw.movements.findIndex(m=>m.id===u.id);
+      if (i>=0) raw.movements[i]=u;
+    }
+  }
   STATE = raw;
   buildIndex(raw);
   render();
@@ -1354,10 +1423,16 @@ function movementTab(movement, workId) {
       ops.push({type:'put',store:'works',record:uw});
       applyMutations(ops,[workId]);
     })},'Edit');
+  const tagBtn=btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
+    onClick:()=>tagDialog(movement.tag||'Inactive',async tag=>{
+      const updated={...movement,tag};
+      await dbPut('movements',updated);
+      applyMutations([{type:'put',store:'movements',record:updated}],[workId]);
+    })}, tagChip(computeMovTag(movement)));
   const extractBtn=siblingsCount>1?btn({className:'btn',style:{padding:'5px 12px',fontSize:'13px'},
     onClick:()=>extractToWorkDialog(movement,workId)},'\u2197 Extract'):null;
   const headerBtns=div({style:{display:'flex',gap:'6px',flexShrink:'0',marginTop:'2px',alignItems:'center'}},
-    reorderBtns, editBtn, extractBtn);
+    reorderBtns, editBtn, tagBtn, extractBtn);
 
   // ── Practice time — live element updated when sessions change ──
   const practiceEl = div({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'14px'}});
@@ -1950,7 +2025,7 @@ function renderWorkScreen() {
       div({className:'title'},work.title),
       div({style:{display:'flex',gap:'8px',alignItems:'center',marginTop:'2px'}},
         span({style:{fontSize:'13px',color:'#6B6B6B'}},composerName),
-        tagChip(work.tag)
+        tagChip(computeWorkDisplayTag(workId))
       )
     ),
     btn({className:'btn-icon',onClick:()=>actionSheet([
@@ -1966,14 +2041,21 @@ function renderWorkScreen() {
         }
         applyMutations(ops);render();
       })},
-      {label:'Change tag',onClick:()=>tagDialog(work.tag,async tag=>{
-        const updated={...work,tag,lastWorked:Date.now()};
-        await dbPut('works',updated);
-        applyMutations([{type:'put',store:'works',record:updated}]);
-      })},
+      {label:'Change tag (all movements)',onClick:()=>{
+        const curTag=movements[0]?.tag||'Inactive';
+        tagDialog(curTag,async tag=>{
+          const ops=[];
+          for(const m of movements){
+            const updated={...m,tag};
+            await dbPut('movements',updated);
+            ops.push({type:'put',store:'movements',record:updated});
+          }
+          applyMutations(ops,[workId]);
+        });
+      }},
       {label:'Add movement',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
-        const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length});
-        const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length};
+        const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length,tag:'Inactive'});
+        const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length,tag:'Inactive'};
         const uw={...work,lastWorked:Date.now()};
         await dbPut('works',uw);
         applyMutations([{type:'put',store:'movements',record:rec},{type:'put',store:'works',record:uw}],[workId]);
@@ -2010,8 +2092,8 @@ function renderWorkScreen() {
       contentArea.appendChild(div({className:'empty'},
         para({},'No movements yet.'),
         btn({className:'btn-primary',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
-          const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:0});
-          const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:0};
+          const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:0,tag:'Inactive'});
+          const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:0,tag:'Inactive'};
           const uw={...work,lastWorked:Date.now()};
           await dbPut('works',uw);
           applyMutations([{type:'put',store:'movements',record:rec},{type:'put',store:'works',record:uw}],[workId]);
@@ -2039,8 +2121,8 @@ function renderWorkScreen() {
   setTab(currentTab);
 
   screen.appendChild(btn({className:'fab',onClick:()=>movementDialog(null,async(name,totalMeasures,targetBpm,notes)=>{
-    const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length});
-    const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length};
+    const id=await dbPut('movements',{workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length,tag:'Inactive'});
+    const rec={id,workId,name,totalMeasures,targetBpm,notes,orderIndex:movements.length,tag:'Inactive'};
     const uw={...work,lastWorked:Date.now()};
     await dbPut('works',uw);
     applyMutations([{type:'put',store:'movements',record:rec},{type:'put',store:'works',record:uw}],[workId]);
@@ -2060,8 +2142,8 @@ function renderComposerScreen() {
       span({style:{fontSize:'19px',flex:'1'}},composerName),
       btn({className:'btn-plus',onClick:()=>workDialog({composer:composerName,title:''},async(comp,title)=>{
         const cId=await getOrCreateComposer(comp);
-        const id=await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});
-        applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Current',lastWorked:Date.now()}}],[id]);
+        const id=await dbPut('works',{composerId:cId,title,tag:'Inactive',lastWorked:Date.now()});
+        applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Inactive',lastWorked:Date.now()}}],[id]);
       })},'+')
     )
   );
@@ -2074,7 +2156,7 @@ function renderComposerScreen() {
       div({style:{flex:'1'}},
         div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
         div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
-          tagChip(w.tag),
+          tagChip(computeWorkDisplayTag(w.id)),
           movCount>0?span({className:'small'},movCount+' movement'+(movCount!==1?'s':'')):null,
           null
         )
@@ -2088,7 +2170,7 @@ function renderComposerScreen() {
 
 // ─── HOME SCREEN ─────────────────────────────────────────────────────────────
 function renderHomeScreen() {
-  let sortMode='recent', filterTag='Current', searchQuery='', searchOpen=false;
+  let viewMode='work', sortMode='recent', filterTag='Current', searchQuery='', searchOpen=false;
   const screen=div({className:'screen'});
   const header=div({style:{padding:'16px 16px 12px',borderBottom:'1px solid var(--border)',flexShrink:'0'}});
 
@@ -2097,133 +2179,207 @@ function renderHomeScreen() {
     style:{display:'none',marginBottom:'10px',width:'100%'}});
   searchInp.addEventListener('input',()=>{searchQuery=searchInp.value.trim().toLowerCase();buildList();});
 
+  function searchIcon() {
+    const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('width','20'); s.setAttribute('height','20');
+    s.setAttribute('fill','none'); s.setAttribute('stroke','currentColor');
+    s.setAttribute('stroke-width','2'); s.setAttribute('stroke-linecap','round');
+    const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    c.setAttribute('cx','10'); c.setAttribute('cy','10'); c.setAttribute('r','6');
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1','14.5'); l.setAttribute('y1','14.5'); l.setAttribute('x2','20'); l.setAttribute('y2','20');
+    s.appendChild(c); s.appendChild(l); return s;
+  }
+
   function buildHeader() {
-    // Clear everything except searchInp which we re-append each time
     header.innerHTML='';
     const isSans=document.body.classList.contains('theme-sans');
     const themeBtn=btn({className:'btn-icon',style:{fontSize:'16px'},title:'Toggle theme',
       onClick:()=>{
         const going=document.body.classList.toggle('theme-sans');
-        localStorage.setItem('repertoire_theme', going?'sans':'serif');
-        document.getElementById('theme-color-meta').content = going ? '#F7F8FA' : '#F5F4F0';
+        localStorage.setItem('repertoire_theme',going?'sans':'serif');
+        document.getElementById('theme-color-meta').content=going?'#F7F8FA':'#F5F4F0';
         buildHeader();
-      }},
-      isSans?'𝒜':'A');
-    const searchIcon=btn({className:'btn-icon',style:{fontSize:'20px'},title:'Search',
+      }}, isSans?'𝒜':'A');
+    const srchBtn=btn({className:'btn-icon',style:{fontSize:'20px'},title:'Search',
       onClick:()=>{
         searchOpen=!searchOpen;
         searchInp.style.display=searchOpen?'block':'none';
-        if (searchOpen) { searchInp.focus(); }
-        else { searchInp.value=''; searchQuery=''; buildList(); }
-      }},
-      (()=>{
-        const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
-        s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('width','20'); s.setAttribute('height','20');
-        s.setAttribute('fill','none'); s.setAttribute('stroke','currentColor');
-        s.setAttribute('stroke-width','2'); s.setAttribute('stroke-linecap','round');
-        const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-        c.setAttribute('cx','10'); c.setAttribute('cy','10'); c.setAttribute('r','6');
-        const l=document.createElementNS('http://www.w3.org/2000/svg','line');
-        l.setAttribute('x1','14.5'); l.setAttribute('y1','14.5'); l.setAttribute('x2','20'); l.setAttribute('y2','20');
-        s.appendChild(c); s.appendChild(l);
-        return s;
-      })()
-    );
-    header.appendChild(div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+        if(searchOpen) searchInp.focus();
+        else{searchInp.value='';searchQuery='';buildList();}
+      }}, searchIcon());
+
+    // Top row: title + icons
+    header.appendChild(div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
       span({style:{fontSize:'20px',color:'var(--text)'}},'Repertoire'),
       div({style:{display:'flex',gap:'4px',alignItems:'center'}},
         btn({className:'btn-icon',style:{fontSize:'18px',marginRight:'2px'},title:'Backup & Restore',onClick:()=>dataModal(reload)},'\u2b06\ufe0e'),
         btn({className:'btn-icon',style:{fontSize:'16px',marginRight:'2px'},title:'AI Settings',onClick:()=>apiKeyModal()},'\u2699\ufe0e'),
-        themeBtn,
-        searchIcon,
-        ...(['composer','recent'].map(mode=>
-          btn({className:'pill'+(sortMode===mode?' active':''),onClick:()=>{sortMode=mode;buildList();}},mode==='composer'?'Composer':'Recent')
-        ))
+        themeBtn, srchBtn
       )
     ));
-    header.appendChild(searchInp); // re-attach (not recreate) — preserves focus
-    const chips=div({className:'chips'});
-    for (const tag of ['All',...TAGS]) {
-      const color=TAG_COLOR[tag];
-      const b=btn({className:'pill',onClick:()=>{filterTag=tag;buildList();}},tag);
-      if (filterTag===tag){b.style.background=color||'var(--accent)';b.style.color='#fff';b.style.borderColor=color||'var(--accent)';}
-      chips.appendChild(b);
+    header.appendChild(searchInp);
+
+    // View toggle row
+    const viewRow=div({style:{display:'flex',gap:'6px',marginBottom:'10px'}});
+    for (const [v,label] of [['composer','Composer'],['work','Works']]) {
+      const b=btn({className:'pill'+(viewMode===v?' active':''),onClick:()=>{
+        viewMode=v;
+        // Reset filter/sort defaults per view
+        if(v==='composer'){searchOpen=false;searchInp.style.display='none';searchInp.value='';searchQuery='';}
+        buildList();
+      }},label);
+      viewRow.appendChild(b);
     }
-    header.appendChild(chips);
+    // Sort pills — only shown in work view
+    if (viewMode==='work') {
+      viewRow.appendChild(div({style:{flex:'1'}})); // spacer
+      for (const [s,label] of [['recent','Recent'],['alpha','A–Z']]) {
+        const b=btn({className:'pill'+(sortMode===s?' active':''),onClick:()=>{sortMode=s;buildList();}},label);
+        viewRow.appendChild(b);
+      }
+    }
+    header.appendChild(viewRow);
+
+    // Filter chips — only in work view
+    if (viewMode==='work') {
+      const chips=div({className:'chips'});
+      for (const tag of ['All',...TAGS]) {
+        const color=TAG_COLOR[tag];
+        const b=btn({className:'pill',onClick:()=>{filterTag=tag;buildList();}},tag);
+        if(filterTag===tag){b.style.background=color||'var(--accent)';b.style.color='#fff';b.style.borderColor=color||'var(--accent)';}
+        chips.appendChild(b);
+      }
+      header.appendChild(chips);
+    }
+  }
+
+  // ── Helper: get last session timestamp for a work (max across its movements) ──
+  function workRecency(workId) {
+    const movs=IDX.movsByWork.get(workId)||[];
+    return movs.reduce((best,m)=>Math.max(best,m.lastWorked||0),0);
+  }
+
+  // ── Work row: used in both search and work view ──
+  function workRow(w) {
+    const comp=IDX.composerById.get(w.composerId);
+    const movCount=(IDX.movsByWork.get(w.id)||[]).length;
+    const wTag=computeWorkTag(w.id);
+    const mastery=workMastery(w.id);
+    return div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||''})},
+      div({style:{flex:'1'}},
+        div({style:{fontSize:'16px',color:'var(--text)'}},w.title),
+        div({style:{fontSize:'13px',color:'var(--sub)',marginTop:'2px'}},
+          movCount+' movement'+(movCount!==1?'s':'')+' \u00b7 '+(comp?.name||'')
+        )
+      ),
+      div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px',flexShrink:'0',marginLeft:'8px'}},
+        tagChip(wTag),
+        movCount>0?span({style:{fontSize:'13px',color:'var(--sub)'}},(pct(mastery))):null
+      )
+    );
+  }
+
+  // ── Movement row (for mixed-tag works in work view) ──
+  function movRow(m, w) {
+    const comp=IDX.composerById.get(w.composerId);
+    const movTag=computeMovTag(m);
+    const mastery=movMastery(m);
+    const movs=IDX.movsByWork.get(w.id)||[];
+    const subtitle = w.title + (comp?' \u00b7 '+comp.name:'');
+    const movIdx=movs.findIndex(x=>x.id===m.id);
+    const tabIdx=movs.length>1 ? movIdx+1 : 0;
+    return div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||'',tabIdx})},
+      div({style:{flex:'1'}},
+        div({style:{fontSize:'16px',color:'var(--text)'}},m.name),
+        div({style:{fontSize:'13px',color:'var(--sub)',marginTop:'2px'}},subtitle)
+      ),
+      div({style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px',flexShrink:'0',marginLeft:'8px'}},
+        tagChip(movTag),
+        span({style:{fontSize:'13px',color:'var(--sub)'}},pct(mastery))
+      )
+    );
   }
 
   const list=div({className:'scroll'});
+
   function buildList() {
     buildHeader();
     list.innerHTML='';
-    // Tag filter
-    const tagFiltered=filterTag==='All'?STATE.works:STATE.works.filter(w=>w.tag===filterTag);
 
-    // Search mode — flat list matching title or composer name
-    if (searchQuery) {
-      const q=searchQuery;
-      const matches=tagFiltered.filter(w=>{
-        const comp=IDX.composerById.get(w.composerId);
-        return w.title.toLowerCase().includes(q)||(comp?.name||'').toLowerCase().includes(q);
-      }).sort((a,b)=>a.title.localeCompare(b.title));
-      if (!matches.length) {
-        list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No results.')));
-        return;
-      }
-      for (const w of matches) {
-        const comp=IDX.composerById.get(w.composerId);
-        const mastery=workMastery(w.id);
-        const movCount=(IDX.movsByWork.get(w.id)||[]).length;
-        list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||''})},
-          div({style:{flex:'1'}},
-            div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
-            div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
-            div({style:{display:'flex',gap:'8px',marginTop:'5px',alignItems:'center'}},
-              tagChip(w.tag),
-              null
-            )
-          ),
-          movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
-        ));
-      }
-      return;
-    }
-
-    if (!STATE.works.length){
+    if(!STATE.works.length){
       list.appendChild(div({className:'empty'},para({},'No repertoire yet.\nTap + to add your first piece.')));
       return;
     }
-    if (sortMode==='composer') {
+
+    // ── COMPOSER VIEW ──
+    if(viewMode==='composer') {
+      if(searchQuery) {
+        // Search: flat list of works matching title or composer
+        const q=searchQuery.toLowerCase();
+        const matches=STATE.works.filter(w=>{
+          const c=IDX.composerById.get(w.composerId);
+          return w.title.toLowerCase().includes(q)||(c?.name||'').toLowerCase().includes(q);
+        }).sort((a,b)=>a.title.localeCompare(b.title));
+        if(!matches.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No results.')));return;}
+        for(const w of matches) list.appendChild(workRow(w));
+        return;
+      }
       const groups=STATE.composers.slice().sort((a,b)=>a.name.localeCompare(b.name))
-        .map(c=>({composer:c,works:tagFiltered.filter(w=>w.composerId===c.id)}))
+        .map(c=>({composer:c,works:STATE.works.filter(w=>w.composerId===c.id).sort((a,b)=>a.title.localeCompare(b.title))}))
         .filter(g=>g.works.length>0);
-      if (!groups.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
-      for (const {composer,works:cWorks} of groups) {
+      if(!groups.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works.')));return;}
+      for(const {composer,works:cWorks} of groups) {
         list.appendChild(div({className:'row',onClick:()=>navigate({screen:'composer',composerName:composer.name})},
           div({},
-            div({style:{fontSize:'16px',color:'#2E2E2E'}},composer.name),
+            div({style:{fontSize:'16px',color:'var(--text)'}},composer.name),
             div({className:'small',style:{marginTop:'3px'}},cWorks.length+' work'+(cWorks.length!==1?'s':''))
           )
         ));
       }
-    } else {
-      const recent=[...tagFiltered].sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
-      if (!recent.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
-      for (const w of recent) {
-        const comp=IDX.composerById.get(w.composerId);
-        const mastery=workMastery(w.id);
-        const movCount=(IDX.movsByWork.get(w.id)||[]).length;
-        list.appendChild(div({className:'row',onClick:()=>navigate({screen:'work',workId:w.id,composerName:comp?.name||''})},
-          div({style:{flex:'1'}},
-            div({style:{fontSize:'16px',color:'#2E2E2E'}},w.title),
-            div({style:{fontSize:'13px',color:'#6B6B6B',marginTop:'2px'}},comp?.name||''),
-            div({style:{display:'flex',gap:'8px',marginTop:'6px',alignItems:'center'}},
-              tagChip(w.tag),
-              null
-            )
-          ),
-          movCount>0?span({style:{fontSize:'14px',color:'#6B6B6B',marginLeft:'8px'}},pct(mastery)):null
-        ));
+      return;
+    }
+
+    // ── WORK VIEW ──
+    // Filter works by tag
+    let works=STATE.works.filter(w=>{
+      if(filterTag==='All') return true;
+      return computeWorkTag(w.id)===filterTag ||
+        (IDX.movsByWork.get(w.id)||[]).some(m=>computeMovTag(m)===filterTag);
+    });
+
+    // Search filter
+    if(searchQuery) {
+      const q=searchQuery.toLowerCase();
+      works=works.filter(w=>{
+        const c=IDX.composerById.get(w.composerId);
+        return w.title.toLowerCase().includes(q)||(c?.name||'').toLowerCase().includes(q)||
+          (IDX.movsByWork.get(w.id)||[]).some(m=>m.name.toLowerCase().includes(q));
+      });
+    }
+
+    if(!works.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
+
+    // Sort
+    if(sortMode==='alpha') works=works.slice().sort((a,b)=>a.title.localeCompare(b.title));
+    else works=works.slice().sort((a,b)=>workRecency(b.id)-workRecency(a.id));
+
+    for(const w of works) {
+      const movs=IDX.movsByWork.get(w.id)||[];
+      const wTag=computeWorkTag(w.id);
+
+      if(wTag==='mixed') {
+        // Show individual movements — filtered by tag if not 'All'
+        const filtMovs = filterTag==='All' ? movs : movs.filter(m=>computeMovTag(m)===filterTag);
+        // Sort movements by recency or alpha
+        const sortedMovs = sortMode==='alpha'
+          ? filtMovs.slice().sort((a,b)=>a.name.localeCompare(b.name))
+          : filtMovs.slice().sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
+        for(const m of sortedMovs) list.appendChild(movRow(m,w));
+      } else {
+        // Only show if matches filter
+        if(filterTag!=='All' && wTag!==filterTag) continue;
+        list.appendChild(workRow(w));
       }
     }
   }
@@ -2233,8 +2389,8 @@ function renderHomeScreen() {
   screen.appendChild(list);
   screen.appendChild(btn({className:'fab',style:{bottom:'80px'},onClick:()=>workDialog(null,async(comp,title)=>{
     const cId=await getOrCreateComposer(comp);
-    const id=await dbPut('works',{composerId:cId,title,tag:'Current',lastWorked:Date.now()});
-    applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Current',lastWorked:Date.now()}}],[id]);
+    const id=await dbPut('works',{composerId:cId,title,tag:'Inactive',lastWorked:Date.now()});
+    applyMutations([{type:'put',store:'works',record:{id,composerId:cId,title,tag:'Inactive',lastWorked:Date.now()}}],[id]);
   })},'+'));
   screen.appendChild(bottomNav('home'));
   return screen;
