@@ -1294,23 +1294,20 @@ async function reload() {
     }
   }
   // ── Backfill lastSessionAt on movements that predate this field ──
-  const needsBackfill = raw.movements.some(m=>!m.lastSessionAt);
+  const needsBackfill = true; // always recompute from real session timestamps
   if (needsBackfill) {
-    const allDT = await dbAll('dailyTotals');
-    // Build map: subjectId -> max date string
-    const latestDate = new Map();
-    for (const dt of allDT) {
-      if (dt.subjectType !== 'movement') continue;
-      const cur = latestDate.get(dt.subjectId);
-      if (!cur || dt.date > cur) latestDate.set(dt.subjectId, dt.date);
+    const allSessions = await dbAll('sessions');
+    // Build map: subjectId -> max timestamp
+    const latestTs = new Map();
+    for (const s of allSessions) {
+      if (s.subjectType !== 'movement') continue;
+      const cur = latestTs.get(s.subjectId)||0;
+      if (s.timestamp > cur) latestTs.set(s.subjectId, s.timestamp);
     }
-    // Convert date strings to timestamps and write back
     for (let i=0; i<raw.movements.length; i++) {
       const m = raw.movements[i];
-      if (m.lastSessionAt) continue;
-      const dateStr = latestDate.get(m.id);
-      if (!dateStr) continue;
-      const ts = new Date(dateStr).getTime();
+      const ts = latestTs.get(m.id);
+      if (!ts) continue;
       const updated = {...m, lastSessionAt: ts};
       raw.movements[i] = updated;
       await dbPut('movements', updated);
