@@ -1324,7 +1324,7 @@ async function reload() {
   buildIndex(raw);
   render();
 }
-function navigate(nav) { if(_activeMetro){_activeMetro.stop();_activeMetro=null;} NAV={...nav,tabIdx:undefined}; render(); }
+function navigate(nav) { if(_activeMetro){_activeMetro.stop();_activeMetro=null;} _metroOpenState.clear(); NAV={...nav,tabIdx:undefined}; render(); }
 function goBack() {
   if (NAV.screen==='work') navigate({screen:'composer',composerName:NAV.composerName});
   else navigate({screen:'home'});
@@ -1631,13 +1631,15 @@ function metroClick(type) {
   else                      hiTick(3000, 1.8);
 }
 
+const _metroOpenState = new Map(); // persist metro open state across re-renders keyed by record.id
+
 function makeMetronomeBlock(record, store) {
   // Works for both movements (store='movements') and exercises (store='exercises')
   let baseBpm   = record.targetBpm || record.metroBpm || 120;
   let metroBpm  = record.metroBpm  || baseBpm;
   let beats     = record.metroBeats || 4;
   let subs      = record.metroSubs  || 1;
-  let open      = record.metroOpen  || false;
+  let open      = _metroOpenState.get(record.id) || false;
 
   let running = false;
   let beatIdx = 0, subIdx = 0;
@@ -1657,18 +1659,16 @@ function makeMetronomeBlock(record, store) {
 
   // Toggle button (metronome icon ♩ in the timer row)
   const toggleBtn = btn({className:'metro-toggle'+(open?' active':''), title:'Metronome',
-    onClick:()=>{ open=!open; toggleBtn.classList.toggle('active',open); panel.style.display=open?'':'none'; savePrefs(); }},
+    onClick:()=>{ open=!open; _metroOpenState.set(record.id,open); toggleBtn.classList.toggle('active',open); panel.style.display=open?'':'none'; savePrefs(); }},
     (()=>{
       const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
       s.setAttribute('viewBox','0 0 24 24'); s.setAttribute('width','20'); s.setAttribute('height','20');
       s.setAttribute('fill','none'); s.setAttribute('stroke','currentColor');
       s.setAttribute('stroke-width','1.8'); s.setAttribute('stroke-linecap','round'); s.setAttribute('stroke-linejoin','round');
-      // Simple metronome shape: vertical line + angled arm + base
+      // Triangle metronome icon
       const base=document.createElementNS('http://www.w3.org/2000/svg','path');
-      base.setAttribute('d','M6 20 L12 4 L18 20 Z');
-      const arm=document.createElementNS('http://www.w3.org/2000/svg','line');
-      arm.setAttribute('x1','12'); arm.setAttribute('y1','4'); arm.setAttribute('x2','16'); arm.setAttribute('y2','13');
-      s.appendChild(base); s.appendChild(arm);
+      base.setAttribute('d','M12 3 L21 20 L3 20 Z');
+      s.appendChild(base);
       return s;
     })()
   );
@@ -2032,8 +2032,9 @@ function summaryTab(work, movements, setTab, isMulti) {
         span({style:{fontSize:'14px',color:'#6B6B6B'}},pct(ms))
       ),
       progressBar(m.totalMeasures,secs),
-      div({style:{fontSize:'12px',color:'#9E9E9E',marginTop:'6px'}},
-        m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm
+      div({style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:'6px'}},
+        div({style:{fontSize:'12px',color:'#9E9E9E'}}, m.totalMeasures+' mm \u00b7 BPM = '+m.targetBpm),
+        tagChip(computeMovTag(m))
       )
     ));
   }
