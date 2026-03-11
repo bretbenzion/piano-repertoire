@@ -1293,6 +1293,29 @@ async function reload() {
       if (i>=0) raw.movements[i]=u;
     }
   }
+  // ── Backfill lastSessionAt on movements that predate this field ──
+  const needsBackfill = raw.movements.some(m=>!m.lastSessionAt);
+  if (needsBackfill) {
+    const allDT = await dbAll('dailyTotals');
+    // Build map: subjectId -> max date string
+    const latestDate = new Map();
+    for (const dt of allDT) {
+      if (dt.subjectType !== 'movement') continue;
+      const cur = latestDate.get(dt.subjectId);
+      if (!cur || dt.date > cur) latestDate.set(dt.subjectId, dt.date);
+    }
+    // Convert date strings to timestamps and write back
+    for (let i=0; i<raw.movements.length; i++) {
+      const m = raw.movements[i];
+      if (m.lastSessionAt) continue;
+      const dateStr = latestDate.get(m.id);
+      if (!dateStr) continue;
+      const ts = new Date(dateStr).getTime();
+      const updated = {...m, lastSessionAt: ts};
+      raw.movements[i] = updated;
+      await dbPut('movements', updated);
+    }
+  }
   STATE = raw;
   buildIndex(raw);
   render();
