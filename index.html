@@ -618,6 +618,18 @@ async function exportCSV() {
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   dl(new Blob([csv],{type:'text/csv'}),'repertoire-'+today()+'.csv');
 }
+// Build lastSessionAt map from sessions array — used in import and reload
+function buildLastSessionMap(sessions) {
+  const map = new Map();
+  if (!sessions) return map;
+  for (const s of sessions) {
+    if (s.subjectType !== 'movement') continue;
+    const cur = map.get(s.subjectId) || 0;
+    if (s.timestamp > cur) map.set(s.subjectId, s.timestamp);
+  }
+  return map;
+}
+
 async function importJSON(text) {
   let p; try{p=JSON.parse(text);}catch{throw new Error('Invalid JSON');}
   const {composers,works,movements,sections,exercises,sessions,dailyTotals,summaries}=p;
@@ -629,6 +641,15 @@ async function importJSON(text) {
   }
   for(const i of composers)   await dbPut('composers',i);
   for(const i of works)       await dbPut('works',i);
+  // Backfill lastSessionAt from sessions before writing movements
+  if(sessions) {
+    const lsMap = buildLastSessionMap(sessions);
+    for(const m of movements) {
+      const ts = lsMap.get(m.id);
+      if(ts) m.lastSessionAt = ts;
+      else delete m.lastSessionAt;
+    }
+  }
   for(const i of movements)   await dbPut('movements',i);
   for(const i of sections)    await dbPut('sections',i);
   // v2+ fields — gracefully skip if importing an older backup
@@ -1294,6 +1315,19 @@ async function reload() {
     }
   }
 
+  // Backfill lastSessionAt on movements from actual session timestamps
+  const allSessions = await dbAll('sessions');
+  const lsMap = buildLastSessionMap(allSessions);
+  for (let i=0; i<raw.movements.length; i++) {
+    const m = raw.movements[i];
+    const ts = lsMap.get(m.id) || 0;
+    const cur = m.lastSessionAt || 0;
+    if (ts !== cur) {
+      const updated = {...m, lastSessionAt: ts||undefined};
+      raw.movements[i] = updated;
+      await dbPut('movements', updated);
+    }
+  }
   STATE = raw;
   buildIndex(raw);
   render();
@@ -1902,7 +1936,7 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved, fromTimer=
       if (subjectType==='movement') {
         const mov=IDX.movById.get(subjectId);
         if (mov) {
-          const updMov={...mov,lastWorked:ts};
+          const updMov={...mov,lastWorked:ts,lastSessionAt:ts};
           await dbPut('movements',updMov);
           applyMutations([{type:'put',store:'movements',record:updMov}]);
         }
@@ -2263,11 +2297,11 @@ function renderHomeScreen() {
   // Last session timestamp across all movements — 0 if none ever logged
   function workRecency(workId) {
     const movs=IDX.movsByWork.get(workId)||[];
-    return movs.reduce((best,m)=>Math.max(best,m.lastWorked||0),0);
+    return movs.reduce((best,m)=>Math.max(best,m.lastSessionAt||0),0);
   }
 
   // Movement recency — for mixed-tag sorting
-  function movRecency(m) { return m.lastWorked||0; }
+  function movRecency(m) { return m.lastSessionAt||0; }
 
   // ── Work row: used in both search and work view ──
   function workRow(w) {
