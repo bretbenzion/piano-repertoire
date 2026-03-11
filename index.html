@@ -863,40 +863,35 @@ async function generateSummary(movement, workTitle, composerName) {
   const unsectionedMeasures=movement.totalMeasures-totalSectioned;
   const allAtLeastC=secs.length>0&&secs.every(s=>GRADE_MASTERY[s.grade]>=GRADE_MASTERY['C']);
 
-  const gradeRef=Object.entries(GRADE_DESC).map(([g,d])=>`  ${g}: ${d}`).join('\n');
-
-  const prompt=`You are a piano practice coach. A student is tracking their repertoire. Here is data for one movement:
+  const prompt=`You are a piano practice assistant. A student is tracking their repertoire. Here is their current data:
 
 Piece: "${workTitle}" by ${composerName}
 Movement: "${movement.name}"
-Total measures: ${movement.totalMeasures}
-Target BPM: ${movement.targetBpm}
-Overall mastery: ${masteryPct}
-Practice time: ${practiceStr}
+Total measures: ${movement.totalMeasures} | Target BPM: ${movement.targetBpm}
+Overall mastery: ${masteryPct} | Practice time: ${practiceStr}
 Sections:
 ${secLines}
-${movement.notes?`\nPractice notes from student:\n${movement.notes}`:''}
-
-Grade system reference (tempo-based with qualitative criteria):
-${gradeRef}
+${movement.notes?`\nStudent notes: ${movement.notes}`:''}
 
 Important context for your analysis:
 - If there are significant unsectioned measures, the student is likely still learning notes in those areas — do not treat unsectioned measures as a gap or omission, treat them as work in progress.
 - If sections show a clear drop-off from higher grades at the beginning to D/E grades later in the movement, the student is likely still learning the later measures — frame this as normal progress through the piece.
 - Only shift your analysis to focus on refinement and performance if all sections have at least a C grade.
 
-Write a concise movement summary with exactly these four sections, each with a short heading:
-1. About (1–2 sentences describing this movement and its character/difficulty, including a natural description of its difficulty level as pianists would commonly describe it. Use this calibration: Beginner = Faber method books, Anna Magdalena Bach minuets; Intermediate = Bach 2-part inventions, Mozart K545, Clementi sonatinas; Late intermediate = harder Bach 2-part inventions, Chopin Waltz in B minor; Early advanced = Mozart K570, easier Chopin nocturnes, Beethoven Op.2 No.1, Bach sinfonias and most suites; Advanced = most difficult Mozart/Haydn sonatas, mid-tier Beethoven sonatas, some Bach WTC, harder Chopin nocturnes; Highly advanced = difficult Beethoven sonatas, harder Bach WTC and partitas, Chopin scherzos; Virtuoso = Chopin Ballade No.4, Liszt Sonata in B minor, hardest Bach works.)
-2. Progress (assessment of current mastery based on grades, coverage, and practice time — ${allAtLeastC?'all sections are at least C so focus on tempo and refinement':'note any learning-phase sections honestly'})
-3. Notes analysis (if notes are present, analyse them; if not, omit this section entirely)
-4. Suggestions (2–3 specific, actionable practice suggestions)
+Write a concise summary with these three sections:
 
-Be direct, encouraging, and specific. Do not use bullet points inside sections — write in prose.`;
+1. About — Describe the movement's character, structure, and technical demands. State its Henle difficulty grade and give a qualitative anchor (e.g. Henle 5 — upper intermediate). Do not reference or summarise the student's own notes.
+
+2. Context — Independent information useful to this student: performance practice considerations, common interpretive choices, technical challenges specific to this piece, or historical/stylistic context that bears on how it should be played. If the student has included practice notes, incorporate relevant observations from them here rather than treating them as the basis for analysis — the notes should inform context, not drive it. This should feel like information from a knowledgeable teacher, not a reflection of what the student already wrote.
+
+3. Progress — Neutral assessment of current mastery based on grades, coverage, and practice time. Note which sections are strongest and weakest. ${allAtLeastC?'All sections are at least C — focus on tempo consolidation and refinement.':'Note any learning-phase sections honestly.'} Suggest 1–2 specific next steps.
+
+Be direct and neutral in tone. Avoid generic encouragement. Write in prose, no bullet points.`;
 
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:700,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4096,messages:[{role:'user',content:prompt}]})
   });
   if (!resp.ok) {
     const e=await resp.json().catch(()=>({}));
@@ -928,35 +923,32 @@ async function generateWorkSummary(work, movements, composerName) {
   const allSecs=movements.flatMap(m=>IDX.secsByMov.get(m.id)||[]);
   const allAtLeastC=allSecs.length>0&&allSecs.every(s=>GRADE_MASTERY[s.grade]>=GRADE_MASTERY['C']);
 
-  const gradeRef=Object.entries(GRADE_DESC).map(([g,d])=>`  ${g}: ${d}`).join('\n');
-
-  const prompt=`You are a piano practice coach. A student is tracking their repertoire. Here is data for a complete work:
+  const prompt=`You are a piano practice assistant. A student is tracking their repertoire. Here is their current data:
 
 Piece: "${work.title}" by ${composerName}
 Overall mastery: ${overallPct}
 
 ${movLines}
 
-Grade system reference (tempo-based with qualitative criteria):
-${gradeRef}
-
 Important context for your analysis:
 - Unsectioned measures indicate the student is still learning notes in those areas — treat them as work in progress, not gaps.
 - A drop-off from higher grades at the start of a movement to D/E grades later is normal when still learning through a piece.
 - Only shift analysis to refinement and performance focus if all sections across all movements have at least a C grade.
 
-Write a concise work-level summary with exactly these four sections, each with a short heading:
-1. About (2–3 sentences describing the work as a whole — its character, structure, and significance — including a natural description of its difficulty level. Use this calibration: Beginner = Faber method books, Anna Magdalena Bach minuets; Intermediate = Bach 2-part inventions, Mozart K545, Clementi sonatinas; Late intermediate = harder Bach 2-part inventions, Chopin Waltz in B minor; Early advanced = Mozart K570, easier Chopin nocturnes, Beethoven Op.2 No.1, Bach sinfonias and most suites; Advanced = most difficult Mozart/Haydn sonatas, mid-tier Beethoven sonatas, some Bach WTC, harder Chopin nocturnes; Highly advanced = difficult Beethoven sonatas, harder Bach WTC and partitas, Chopin scherzos; Virtuoso = Chopin Ballade No.4, Liszt Sonata in B minor, hardest Bach works.)
-2. Progress (assessment across all movements, noting practice time, which movements are strongest, and which need most work — ${allAtLeastC?'all sections are at least C so focus on tempo and refinement':'note learning-phase movements honestly'})
-3. Notes analysis (synthesise any student notes across movements; if none exist, omit this section entirely)
-4. Suggestions (3–4 specific, actionable practice suggestions considering the whole work)
+Write a concise summary with these three sections:
 
-Be direct, encouraging, and specific. Do not use bullet points inside sections — write in prose.`;
+1. About — Describe the work's character, structure, and technical demands across movements. State its Henle difficulty grade and give a qualitative anchor (e.g. Henle 5 — upper intermediate). Do not reference or summarise the student's own notes.
+
+2. Context — Independent information useful to this student: performance practice considerations, common interpretive choices, technical challenges specific to this piece, or historical/stylistic context that bears on how it should be played. If the student has included practice notes, incorporate relevant observations from them here rather than treating them as the basis for analysis — the notes should inform context, not drive it. This should feel like information from a knowledgeable teacher, not a reflection of what the student already wrote.
+
+3. Progress — Neutral assessment of current mastery based on grades, coverage, and practice time across all movements. Note which movements are strongest and weakest. ${allAtLeastC?'All sections are at least C — focus on tempo consolidation and refinement.':'Note any learning-phase movements honestly.'} Suggest 1–2 specific next steps.
+
+Be direct and neutral in tone. Avoid generic encouragement. Write in prose, no bullet points.`;
 
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:900,messages:[{role:'user',content:prompt}]})
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4096,messages:[{role:'user',content:prompt}]})
   });
   if (!resp.ok) {
     const e=await resp.json().catch(()=>({}));
