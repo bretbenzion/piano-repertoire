@@ -470,16 +470,19 @@ function computeWorkTag(workId) {
 }
 
 // Priority display tag for composer view — no 'mixed', always returns a single tag.
-// Current (any) > Finished (all non-Inactive) > Learned (all non-Inactive) > Inactive
 const TAG_PRIORITY = {Current:3, Finished:2, Learned:1, Inactive:0};
 function computeWorkDisplayTag(workId) {
   const movs = IDX.movsByWork.get(workId)||[];
   if (!movs.length) return IDX.workById.get(workId)?.tag||'Inactive';
   const tags = movs.map(m=>computeMovTag(m));
+  // If any movement is Current → Current
   if (tags.some(t=>t==='Current')) return 'Current';
-  if (tags.every(t=>t==='Inactive')) return 'Inactive';
-  // Return highest achieved
-  return tags.reduce((best,t)=>(TAG_PRIORITY[t]||0)>(TAG_PRIORITY[best]||0)?t:best,'Inactive');
+  // If all movements are Finished → Finished
+  if (tags.every(t=>t==='Finished')) return 'Finished';
+  // If all movements are Finished or Learned → Learned
+  if (tags.every(t=>t==='Finished'||t==='Learned')) return 'Learned';
+  // Otherwise (mix of auto-tags + Inactive, or all Inactive) → Inactive
+  return 'Inactive';
 }
 
 // ─── PARTIAL STATE MUTATION ───────────────────────────────────────────────────
