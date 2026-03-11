@@ -2369,27 +2369,26 @@ function renderHomeScreen() {
 
     if(!works.length){list.appendChild(div({style:{padding:'32px',textAlign:'center'}},span({style:{color:'#9E9E9E'}},'No works match this filter.')));return;}
 
-    // Sort
-    if(sortMode==='alpha') works=works.slice().sort((a,b)=>a.title.localeCompare(b.title));
-    else works=works.slice().sort((a,b)=>workRecency(b.id)-workRecency(a.id));
-
+    // Build flat list of items — whole works or individual movements for mixed-tag works
+    // Interleaving them lets movement rows sort correctly against whole-work rows
+    const items=[];
     for(const w of works) {
       const movs=IDX.movsByWork.get(w.id)||[];
       const wTag=computeWorkTag(w.id);
-
       if(wTag==='mixed') {
-        // Show individual movements — filtered by tag if not 'All'
-        const filtMovs = filterTag==='All' ? movs : movs.filter(m=>computeMovTag(m)===filterTag);
-        // Sort movements by recency or alpha
-        const sortedMovs = sortMode==='alpha'
-          ? filtMovs.slice().sort((a,b)=>a.name.localeCompare(b.name))
-          : filtMovs.slice().sort((a,b)=>movRecency(b)-movRecency(a));
-        for(const m of sortedMovs) list.appendChild(movRow(m,w));
+        const filtMovs=filterTag==='All'?movs:movs.filter(m=>computeMovTag(m)===filterTag);
+        for(const m of filtMovs)
+          items.push({type:'mov',w,m,sortKey:sortMode==='alpha'?m.name:movRecency(m)});
       } else {
-        // Only show if matches filter
-        if(filterTag!=='All' && wTag!==filterTag) continue;
-        list.appendChild(workRow(w));
+        if(filterTag!=='All'&&wTag!==filterTag) continue;
+        items.push({type:'work',w,sortKey:sortMode==='alpha'?w.title:workRecency(w.id)});
       }
+    }
+    if(sortMode==='alpha') items.sort((a,b)=>a.sortKey.localeCompare(b.sortKey));
+    else items.sort((a,b)=>b.sortKey-a.sortKey);
+    for(const item of items) {
+      if(item.type==='mov') list.appendChild(movRow(item.m,item.w));
+      else list.appendChild(workRow(item.w));
     }
   }
 
