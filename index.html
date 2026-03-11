@@ -419,7 +419,11 @@ function buildIndex(raw) {
     secsByMov.get(s.movementId).push(s);
   }
 
-  IDX = {composerById,workById,movById,secById,movsByWork,secsByMov};
+  const composerPos = new Map(raw.composers.map((c,i)=>[c.id,i]));
+  const workPos     = new Map(raw.works.map((w,i)=>[w.id,i]));
+  const movPos      = new Map(raw.movements.map((m,i)=>[m.id,i]));
+  const secPos      = new Map(raw.sections.map((s,i)=>[s.id,i]));
+  IDX = {composerById,workById,movById,secById,movsByWork,secsByMov,composerPos,workPos,movPos,secPos};
 
   // Build mastery cache for all works
   const MASTERY = new Map();
@@ -497,19 +501,21 @@ function applyMutations(ops, affectedWorkIds=[]) {
     if (op.type==='put') {
       const rec = op.record;
       if (op.store==='composers') {
+        const isNew=!IDX.composerById.has(rec.id);
         IDX.composerById.set(rec.id,rec);
-        const i=STATE.composers.findIndex(c=>c.id===rec.id);
-        if (i>=0) STATE.composers[i]=rec; else STATE.composers.push(rec);
+        if (isNew) { IDX.composerPos.set(rec.id,STATE.composers.length); STATE.composers.push(rec); }
+        else STATE.composers[IDX.composerPos.get(rec.id)]=rec;
       } else if (op.store==='works') {
+        const isNew=!IDX.workById.has(rec.id);
         IDX.workById.set(rec.id,rec);
-        const i=STATE.works.findIndex(w=>w.id===rec.id);
-        if (i>=0) STATE.works[i]=rec; else STATE.works.push(rec);
+        if (isNew) { IDX.workPos.set(rec.id,STATE.works.length); STATE.works.push(rec); }
+        else STATE.works[IDX.workPos.get(rec.id)]=rec;
       } else if (op.store==='movements') {
         const old=IDX.movById.get(rec.id);
+        const isNew=!old;
         IDX.movById.set(rec.id,rec);
-        const i=STATE.movements.findIndex(m=>m.id===rec.id);
-        if (i>=0) STATE.movements[i]=rec; else STATE.movements.push(rec);
-        // Update movsByWork: remove from old bucket if workId changed
+        if (isNew) { IDX.movPos.set(rec.id,STATE.movements.length); STATE.movements.push(rec); }
+        else STATE.movements[IDX.movPos.get(rec.id)]=rec;
         if (old && old.workId!==rec.workId) {
           const oldArr=IDX.movsByWork.get(old.workId)||[];
           const oi=oldArr.findIndex(m=>m.id===rec.id);
@@ -522,9 +528,10 @@ function applyMutations(ops, affectedWorkIds=[]) {
         arr.sort((a,b)=>a.orderIndex-b.orderIndex);
       } else if (op.store==='sections') {
         const old=IDX.secById.get(rec.id);
+        const isNew=!old;
         IDX.secById.set(rec.id,rec);
-        const i=STATE.sections.findIndex(s=>s.id===rec.id);
-        if (i>=0) STATE.sections[i]=rec; else STATE.sections.push(rec);
+        if (isNew) { IDX.secPos.set(rec.id,STATE.sections.length); STATE.sections.push(rec); }
+        else STATE.sections[IDX.secPos.get(rec.id)]=rec;
         if (old && old.movementId!==rec.movementId) {
           const oldArr=IDX.secsByMov.get(old.movementId)||[];
           const oi=oldArr.findIndex(s=>s.id===rec.id);
@@ -537,30 +544,25 @@ function applyMutations(ops, affectedWorkIds=[]) {
       }
     } else if (op.type==='del') {
       if (op.store==='composers') {
-        IDX.composerById.delete(op.id);
-        STATE.composers=STATE.composers.filter(c=>c.id!==op.id);
+        const i=IDX.composerPos.get(op.id);
+        IDX.composerById.delete(op.id); IDX.composerPos.delete(op.id);
+        if (i!=null) { STATE.composers.splice(i,1); for(let j=i;j<STATE.composers.length;j++) IDX.composerPos.set(STATE.composers[j].id,j); }
       } else if (op.store==='works') {
-        IDX.workById.delete(op.id);
-        IDX.MASTERY.delete(op.id);
-        STATE.works=STATE.works.filter(w=>w.id!==op.id);
+        const i=IDX.workPos.get(op.id);
+        IDX.workById.delete(op.id); IDX.workPos.delete(op.id); IDX.MASTERY.delete(op.id);
+        if (i!=null) { STATE.works.splice(i,1); for(let j=i;j<STATE.works.length;j++) IDX.workPos.set(STATE.works[j].id,j); }
       } else if (op.store==='movements') {
         const old=IDX.movById.get(op.id);
-        IDX.movById.delete(op.id);
-        STATE.movements=STATE.movements.filter(m=>m.id!==op.id);
-        if (old) {
-          const arr=IDX.movsByWork.get(old.workId)||[];
-          const i=arr.findIndex(m=>m.id===op.id);
-          if (i>=0) arr.splice(i,1);
-        }
+        const i=IDX.movPos.get(op.id);
+        IDX.movById.delete(op.id); IDX.movPos.delete(op.id);
+        if (i!=null) { STATE.movements.splice(i,1); for(let j=i;j<STATE.movements.length;j++) IDX.movPos.set(STATE.movements[j].id,j); }
+        if (old) { const arr=IDX.movsByWork.get(old.workId)||[]; const ai=arr.findIndex(m=>m.id===op.id); if(ai>=0) arr.splice(ai,1); }
       } else if (op.store==='sections') {
         const old=IDX.secById.get(op.id);
-        IDX.secById.delete(op.id);
-        STATE.sections=STATE.sections.filter(s=>s.id!==op.id);
-        if (old) {
-          const arr=IDX.secsByMov.get(old.movementId)||[];
-          const i=arr.findIndex(s=>s.id===op.id);
-          if (i>=0) arr.splice(i,1);
-        }
+        const i=IDX.secPos.get(op.id);
+        IDX.secById.delete(op.id); IDX.secPos.delete(op.id);
+        if (i!=null) { STATE.sections.splice(i,1); for(let j=i;j<STATE.sections.length;j++) IDX.secPos.set(STATE.sections[j].id,j); }
+        if (old) { const arr=IDX.secsByMov.get(old.movementId)||[]; const ai=arr.findIndex(s=>s.id===op.id); if(ai>=0) arr.splice(ai,1); }
       }
     }
   }
@@ -1895,11 +1897,11 @@ function addSessionDialog(subjectId, subjectType, defaultMs, onSaved, fromTimer=
       const id=await dbPut('sessions',{subjectId,subjectType,durationMs,timestamp:ts,note:note.trim()});
       const date=localDateStr(ts);
       await upsertDailyTotal(date,subjectId,subjectType,durationMs);
-      // Update movement.lastWorked if this is a movement session
+      // Update movement.lastSessionAt if this is a movement session
       if (subjectType==='movement') {
         const mov=IDX.movById.get(subjectId);
         if (mov) {
-          const updMov={...mov,lastWorked:ts};
+          const updMov={...mov,lastWorked:ts,lastSessionAt:ts};
           await dbPut('movements',updMov);
           applyMutations([{type:'put',store:'movements',record:updMov}]);
         }
@@ -2257,11 +2259,14 @@ function renderHomeScreen() {
     }
   }
 
-  // ── Helper: get last session timestamp for a work (max across its movements) ──
+  // Last session timestamp across all movements — 0 if none ever logged
   function workRecency(workId) {
     const movs=IDX.movsByWork.get(workId)||[];
-    return movs.reduce((best,m)=>Math.max(best,m.lastWorked||0),0);
+    return movs.reduce((best,m)=>Math.max(best,m.lastSessionAt||0),0);
   }
+
+  // Movement recency — for mixed-tag sorting
+  function movRecency(m) { return m.lastSessionAt||0; }
 
   // ── Work row: used in both search and work view ──
   function workRow(w) {
@@ -2377,7 +2382,7 @@ function renderHomeScreen() {
         // Sort movements by recency or alpha
         const sortedMovs = sortMode==='alpha'
           ? filtMovs.slice().sort((a,b)=>a.name.localeCompare(b.name))
-          : filtMovs.slice().sort((a,b)=>(b.lastWorked||0)-(a.lastWorked||0));
+          : filtMovs.slice().sort((a,b)=>movRecency(b)-movRecency(a));
         for(const m of sortedMovs) list.appendChild(movRow(m,w));
       } else {
         // Only show if matches filter
