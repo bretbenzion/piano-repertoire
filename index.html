@@ -10,8 +10,8 @@
 <link rel="manifest" href="manifest.json"/>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script>(function(){var t=localStorage.getItem('repertoire_theme');var apply=function(cls){document.body?document.body.classList.add(cls):document.addEventListener('DOMContentLoaded',function(){document.body.classList.add(cls);});};if(t==='sans')apply('theme-sans');else if(t==='dark')apply('theme-dark');})();</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rubik:wght@400;500;600;700&family=Zilla+Slab:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<script>(function(){var t=localStorage.getItem('repertoire_theme');var apply=function(cls){document.body?document.body.classList.add(cls):document.addEventListener('DOMContentLoaded',function(){document.body.classList.add(cls);});};if(t==='sans')apply('theme-sans');else if(t==='rubik')apply('theme-rubik');else if(t==='clarendon')apply('theme-clarendon');})();</script>
 <style>
 /* ─── THEME ─────────────────────────────────────────────────────────────── */
 :root{
@@ -29,11 +29,16 @@ body.theme-dark{
   --muted:#4A5568;--accent:#4D8EFF;--font:'Inter',system-ui,sans-serif;
   --radius:10px;--card-radius:14px;
 }
-body.theme-dark .field input,body.theme-dark .search-inp{background:#1C2130;color:#E8EDFB;}
-body.theme-dark .modal,body.theme-dark .sheet{background:#161A24;}
-body.theme-dark .ai-box{background:#141C30;border-color:#253050;}
-body.theme-dark .ai-section-title{color:#6B85C8;}
-body.theme-dark .warn{background:#2A1F00;border-color:#7A5500;}
+body.theme-rubik{
+  --bg:#F6F7FB;--bg2:#EAECF4;--border:#D0D5E8;--text:#0F1523;--sub:#3D4A6B;
+  --muted:#8892B0;--accent:#2B6ED4;--font:'Rubik',system-ui,sans-serif;
+  --radius:10px;--card-radius:14px;
+}
+body.theme-clarendon{
+  --bg:#F5F3EE;--bg2:#EDEAE3;--border:#DDD9D0;--text:#1E1A14;--sub:#5C5040;
+  --muted:#9E9080;--accent:#8B4513;--font:Clarendon,'Zilla Slab',Georgia,serif;
+  --radius:7px;--card-radius:10px;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;font-family:var(--font);background:var(--bg);color:var(--text);overscroll-behavior:none}
 input,button,textarea{font-family:inherit}
@@ -187,20 +192,15 @@ const GRADE_COLOR_SERIF = {
   'D':'#E53935','E':'#BDBDBD'
 };
 const GRADE_COLOR_SANS = {
-  'AA':'#1534A0','A':'#0A6B2E','A-':'#1A8A3A',
-  'B+':'#2EA04A','B':'#28C44A','B-':'#6DD98A',
-  'C+':'#F5C000','C':'#F5A000','C-':'#EF6A00',
-  'D':'#E8281E','E':'#8892B0'
+  'AA':'#1744B0','A':'#0E7A34','A-':'#1E9040',
+  'B+':'#2FA84E','B':'#3DB85A','B-':'#7DC990',
+  'C+':'#E8B400','C':'#E89800','C-':'#E06000',
+  'D':'#D93020','E':'#B0B4BC'
 };
-const GRADE_COLOR_DARK = {
-  'AA':'#6699FF','A':'#33DD77','A-':'#44EE88',
-  'B+':'#88EE55','B':'#AAEE33','B-':'#CCEE55',
-  'C+':'#FFDD00','C':'#FFBB00','C-':'#FF8800',
-  'D':'#FF4444','E':'#4A5568'
-};
+
 function gradeColor(grade) {
-  if (document.body.classList.contains('theme-dark')) return GRADE_COLOR_DARK[grade]||'#4A5568';
-  if (document.body.classList.contains('theme-sans')) return GRADE_COLOR_SANS[grade]||'#8892B0';
+  if (document.body.classList.contains('theme-sans') ||
+      document.body.classList.contains('theme-rubik')) return GRADE_COLOR_SANS[grade]||'#C8CDD8';
   return GRADE_COLOR_SERIF[grade]||'#CCCCC8';
 }
 const GRADE_COLOR = new Proxy({}, { get: (_,g) => gradeColor(g) });
@@ -2285,30 +2285,19 @@ function renderHomeScreen() {
 
   function buildHeader() {
     header.innerHTML='';
-    const isDark=document.body.classList.contains('theme-dark');
-    const isSans=document.body.classList.contains('theme-sans');
-    const themeIcon = isDark ? '◑' : isSans ? '𝒜' : 'A';
+    const themes = ['serif','sans','rubik','clarendon'];
+    const icons  = {'serif':'A','sans':'𝒜','rubik':'R','clarendon':'C'};
+    const bgs    = {'serif':'#F5F4F0','sans':'#F6F7FB','rubik':'#F6F7FB','clarendon':'#F5F3EE'};
+    const cur = themes.find(t=>document.body.classList.contains('theme-'+t)) || 'serif';
+    const next = themes[(themes.indexOf(cur)+1) % themes.length];
     const themeBtn=btn({className:'btn-icon',style:{fontSize:'16px'},title:'Toggle theme',
       onClick:()=>{
-        if (!isSans && !isDark) {
-          // serif → sans
-          document.body.classList.add('theme-sans');
-          localStorage.setItem('repertoire_theme','sans');
-          document.getElementById('theme-color-meta').content='#F6F7FB';
-        } else if (isSans && !isDark) {
-          // sans → dark
-          document.body.classList.remove('theme-sans');
-          document.body.classList.add('theme-dark');
-          localStorage.setItem('repertoire_theme','dark');
-          document.getElementById('theme-color-meta').content='#0D0F14';
-        } else {
-          // dark → serif
-          document.body.classList.remove('theme-dark');
-          localStorage.setItem('repertoire_theme','serif');
-          document.getElementById('theme-color-meta').content='#F5F4F0';
-        }
+        themes.forEach(t=>document.body.classList.remove('theme-'+t));
+        if(next!=='serif') document.body.classList.add('theme-'+next);
+        localStorage.setItem('repertoire_theme', next);
+        document.getElementById('theme-color-meta').content = bgs[next];
         buildHeader();
-      }}, themeIcon);
+      }}, icons[cur]);
     const srchBtn=btn({className:'btn-icon',style:{fontSize:'20px'},title:'Search',
       onClick:()=>{
         searchOpen=!searchOpen;
@@ -2862,12 +2851,10 @@ function render() {
 (async()=>{
   // Apply stored theme immediately
   const storedTheme = localStorage.getItem('repertoire_theme');
-  if (storedTheme === 'sans') {
-    document.body.classList.add('theme-sans');
-    document.getElementById('theme-color-meta').content = '#F6F7FB';
-  } else if (storedTheme === 'dark') {
-    document.body.classList.add('theme-dark');
-    document.getElementById('theme-color-meta').content = '#0D0F14';
+  const themeBgs = {'sans':'#F6F7FB','rubik':'#F6F7FB','clarendon':'#F5F3EE'};
+  if (storedTheme && storedTheme !== 'serif') {
+    document.body.classList.add('theme-'+storedTheme);
+    document.getElementById('theme-color-meta').content = themeBgs[storedTheme] || '#F5F4F0';
   }
   document.getElementById('app').innerHTML='<div style="height:100dvh;display:flex;align-items:center;justify-content:center;color:#9E9E9E;">Loading\u2026</div>';
   await reload();
