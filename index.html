@@ -1603,33 +1603,43 @@ function getAudioCtx() {
   if (_audioCtx.state === 'suspended') _audioCtx.resume();
   return _audioCtx;
 }
-function metroClick(type) {
+function metroClick(type, atTime) {
+  // Schedule sound at exact audio clock time — immune to JS timer jitter
   const ctx = getAudioCtx();
-  const now = ctx.currentTime;
+  const t = atTime || ctx.currentTime;
 
-  const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -3; comp.knee.value = 2; comp.ratio.value = 12;
-  comp.attack.value = 0.0005; comp.release.value = 0.03;
-  comp.connect(ctx.destination);
+  // Reuse shared compressor if it exists and context matches
+  if (!_metroComp || _metroComp.context !== ctx) {
+    _metroComp = ctx.createDynamicsCompressor();
+    _metroComp.threshold.value = -3; _metroComp.knee.value = 2; _metroComp.ratio.value = 12;
+    _metroComp.attack.value = 0.0005; _metroComp.release.value = 0.03;
+    _metroComp.connect(ctx.destination);
+  }
+  const comp = _metroComp;
 
   function hiTick(freq, gain) {
     const m = ctx.createGain(); m.connect(comp);
-    const bsz = Math.floor(ctx.sampleRate * 0.012), buf = ctx.createBuffer(1, bsz, ctx.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < bsz; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bsz * 0.18));
-    const ns = ctx.createBufferSource(); ns.buffer = buf;
+    const bsz = Math.floor(ctx.sampleRate * 0.012);
+    if (!_metroBuf || _metroBuf.sampleRate !== ctx.sampleRate) {
+      _metroBuf = ctx.createBuffer(1, bsz, ctx.sampleRate);
+      const d = _metroBuf.getChannelData(0);
+      for (let i = 0; i < bsz; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bsz * 0.18));
+    }
+    const ns = ctx.createBufferSource(); ns.buffer = _metroBuf;
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = freq; hp.Q.value = 0.7;
-    const ng = ctx.createGain(); ng.gain.setValueAtTime(gain, now); ng.gain.exponentialRampToValueAtTime(0.001, now + 0.012);
-    ns.connect(hp); hp.connect(ng); ng.connect(m); ns.start(now); ns.stop(now + 0.015);
+    const ng = ctx.createGain(); ng.gain.setValueAtTime(gain, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.012);
+    ns.connect(hp); hp.connect(ng); ng.connect(m); ns.start(t); ns.stop(t + 0.015);
     const o = ctx.createOscillator(), og = ctx.createGain(); o.type = 'sine';
-    o.frequency.setValueAtTime(freq * 0.4, now); o.frequency.exponentialRampToValueAtTime(freq * 0.2, now + 0.02);
-    og.gain.setValueAtTime(gain * 0.35, now); og.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
-    o.connect(og); og.connect(m); o.start(now); o.stop(now + 0.025);
+    o.frequency.setValueAtTime(freq * 0.4, t); o.frequency.exponentialRampToValueAtTime(freq * 0.2, t + 0.02);
+    og.gain.setValueAtTime(gain * 0.35, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.02);
+    o.connect(og); og.connect(m); o.start(t); o.stop(t + 0.025);
   }
 
   if (type === 'down')      hiTick(6000, 4.5);
   else if (type === 'beat') hiTick(4500, 3.5);
   else                      hiTick(3000, 1.8);
 }
+let _metroComp = null, _metroBuf = null; // shared audio nodes across ticks
 
 const _metroOpenState = new Map(); // persist metro open state across re-renders keyed by record.id
 
@@ -1732,9 +1742,9 @@ function makeMetronomeBlock(record, store) {
   const adjUp   = btn({className:'metro-bpm-adj', onClick:()=>setBpm(metroBpm+1)}, '+');
 
   // Beats options
-  const beatsOpts = [2,3,4,5,6].map(n => {
+  const beatsOpts = [1,2,3,4,5,6].map(n => {
     const b = btn({className:'metro-opt'+(beats===n?' active':''), onClick:()=>{
-      beats=n; beatsOpts.forEach((x,i)=>x.classList.toggle('active',[2,3,4,5,6][i]===n));
+      beats=n; beatsOpts.forEach((x,i)=>x.classList.toggle('active',[1,2,3,4,5,6][i]===n));
       buildDots(); restartIfRunning(); savePrefs();
     }}, String(n));
     return b;
@@ -1749,47 +1759,68 @@ function makeMetronomeBlock(record, store) {
     return b;
   });
 
-  // ── Tick engine ──
-  // Single source of truth: generation. Any tick with stale gen silently dies.
-  let generation = 0;
+  // ── Tick engine — lookahead scheduler ──
+  // Audio clock schedules sounds ahead of time; JS timer only tops up the queue.
+  // This is immune to JS thread jitter and Android timer throttling.
+  const LOOKAHEAD_MS  = 100.0; // how often the scheduler fires (ms)
+  const SCHEDULE_AHEAD = 0.15; // how far ahead to schedule audio (seconds)
 
-  function tick(gen) {
-    if (gen !== generation) return;
-    const type = (beatIdx===0 && subIdx===0) ? 'down' : subIdx===0 ? 'beat' : 'sub';
-    metroClick(type);
-    flashDot(beatIdx, subIdx, type);
-    subIdx++;
-    if (subIdx >= subs) { subIdx = 0; beatIdx = (beatIdx + 1) % beats; }
-    tickTimer = setTimeout(() => tick(gen), (60000 / metroBpm) / subs);
+  let generation   = 0;
+  let nextTickTime = 0;  // audio context time of next scheduled tick
+  let schedBeat    = 0;  // beat index at next scheduled tick
+  let schedSub     = 0;  // sub index at next scheduled tick
+
+  function scheduleAhead() {
+    const ctx = getAudioCtx();
+    const gen = generation;
+    while (nextTickTime < ctx.currentTime + SCHEDULE_AHEAD) {
+      if (gen !== generation) return; // stopped
+      const b = schedBeat, s = schedSub;
+      const type = (b===0 && s===0) ? 'down' : s===0 ? 'beat' : 'sub';
+      // Schedule sound at exact audio time
+      metroClick(type, nextTickTime);
+      // Schedule UI flash slightly before tick time (clamped to now)
+      const flashDelay = Math.max(0, (nextTickTime - ctx.currentTime) * 1000 - 10);
+      const capturedB = b, capturedS = s, capturedType = type;
+      setTimeout(() => { if (generation === gen) flashDot(capturedB, capturedS, capturedType); }, flashDelay);
+      // Advance counters
+      schedSub++;
+      if (schedSub >= subs) { schedSub = 0; schedBeat = (schedBeat + 1) % beats; }
+      nextTickTime += (60.0 / metroBpm) / subs;
+    }
+    if (generation === gen) tickTimer = setTimeout(scheduleAhead, LOOKAHEAD_MS);
   }
 
   function stopMetro() {
-    generation++;          // kills any in-flight tick
+    generation++;
     clearTimeout(tickTimer);
     tickTimer = null;
     running = false;
-    beatIdx = 0; subIdx = 0;
+    schedBeat = 0; schedSub = 0;
     clearDots();
     playBtn.innerHTML = '▶';
     playBtn.className = 'metro-play stopped';
   }
 
   function startMetro() {
-    generation++;          // fresh generation
+    generation++;
     running = true;
-    beatIdx = 0; subIdx = 0;
+    schedBeat = 0; schedSub = 0;
+    const ctx = getAudioCtx();
+    nextTickTime = ctx.currentTime + 0.05; // small startup delay
     playBtn.innerHTML = '■';
     playBtn.className = 'metro-play running';
-    tick(generation);
+    scheduleAhead();
   }
 
   function restartIfRunning() {
-    // Called when beats/subs/bpm change while running
     if (!running) return;
-    generation++;          // kills current chain
+    generation++;
     clearTimeout(tickTimer);
-    beatIdx = 0; subIdx = 0;
-    tick(generation);      // start fresh chain with same running=true state
+    schedBeat = 0; schedSub = 0;
+    const ctx = getAudioCtx();
+    nextTickTime = ctx.currentTime + 0.05;
+    scheduleAhead();
   }
 
   // Play button
