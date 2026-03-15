@@ -1416,11 +1416,11 @@ function sectionRow(section, idx, allSections, movement, workId) {
     }}
   ];
 
-  return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'#EFEEE9',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px',cursor:'pointer'},onClick:openEdit},
+  return div({style:{display:'flex',alignItems:'center',gap:'12px',background:'var(--bg2)',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px',cursor:'pointer'},onClick:openEdit},
     gradeBadge(section.grade),
     div({style:{flex:'1'}},
-      div({style:{fontSize:'14px',fontWeight:'bold',color:'#2E2E2E'}},sectionLabel),
-      div({style:{fontSize:'13px',color:'#6B6B6B'}},'mm. '+section.startMeasure+'\u2013'+section.endMeasure)
+      div({style:{fontSize:'14px',fontWeight:'bold',color:'var(--text)'}},sectionLabel),
+      div({style:{fontSize:'13px',color:'var(--sub)'}},'mm. '+section.startMeasure+'\u2013'+section.endMeasure)
     ),
     btn({className:'btn-icon',onClick:e=>{e.stopPropagation();actionSheet(menuItems);}},'\u22ef')
   );
@@ -2017,14 +2017,14 @@ function makeSessionLog(subjectId, subjectType, onNewSession) {
       container.appendChild(para({style:{fontSize:'13px',color:'#9E9E9E',marginBottom:'8px'}},'No sessions logged yet.'));
       return;
     }
-    const listEl=div({style:{background:'#EFEEE9',borderRadius:'10px',padding:'0 12px'}});
+    const listEl=div({style:{background:'var(--bg2)',borderRadius:'10px',padding:'0 12px'}});
     for (const s of sessions) {
       const d=new Date(s.timestamp);
       const dateStr=d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
       const timeStr=d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
       const row=div({className:'session-row'},
         div({style:{flex:'1'}},
-          div({style:{fontWeight:'bold',color:'#2E2E2E'}},fmtDurationLong(s.durationMs)),
+          div({style:{fontWeight:'bold',color:'var(--text)'}},fmtDurationLong(s.durationMs)),
           div({style:{color:'#9E9E9E',fontSize:'12px'}},dateStr+' · '+timeStr+(s.note?' · '+s.note:''))
         ),
         btn({className:'btn-icon',style:{fontSize:'18px',color:'#BDBDBD'},onClick:async(e)=>{
